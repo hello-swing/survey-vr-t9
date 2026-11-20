@@ -6,32 +6,28 @@
 <title>水準測量 VR 練習</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#bcd4e6;font-family:system-ui,"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif;color:#2b2a27}
-  #hud{position:fixed;left:12px;top:12px;width:min(400px,calc(100vw - 24px));max-height:calc(100vh - 24px);overflow:auto;box-sizing:border-box;background:#fffffff0;border-radius:10px;padding:12px 14px;font-size:13.5px;line-height:1.65;box-shadow:0 1px 4px #0003}
+  #hud{position:fixed;left:12px;top:12px;width:min(380px,calc(100vw - 24px));max-height:calc(100vh - 90px);overflow:auto;box-sizing:border-box;background:#fffffff0;border-radius:10px;padding:12px 14px;font-size:14px;line-height:1.7;box-shadow:0 1px 4px #0003}
   #hud h1{font-size:16px;margin:0 0 4px}
-  #hud p{margin:4px 0}
+  #hud p{margin:6px 0}
   #hud kbd{display:inline-block;min-width:1.4em;padding:0 4px;border:1px solid #bbb;border-bottom-width:2px;border-radius:4px;background:#f6f6f6;font-family:inherit;font-size:12px;text-align:center}
   #hud .muted{color:#6b6860}
-  #hud button{font:inherit}
-  #hudToggle{position:fixed;left:12px;top:12px;display:none}
+  #hud button{font:inherit;padding:6px 10px;margin:2px 4px 2px 0;border-radius:8px;border:1px solid #9a968c;background:#fff;cursor:pointer}
+  #hud button.pri{background:#1f5fa8;color:#fff;border-color:#1f5fa8}
+  #hudToggle{position:fixed;left:12px;top:12px;display:none;font:inherit;padding:6px 10px}
   #xr{position:fixed;right:12px;bottom:12px;padding:12px 18px;font-size:16px;border:0;border-radius:10px;background:#1f5fa8;color:#fff;cursor:pointer}
   #xr:disabled{background:#8a8f96;cursor:default}
 </style>
 </head>
 <body>
 <div id="hud">
-  <h1>試題九　水準測量外業 VR 原型</h1>
-  <p class="muted">04202-1060209 縱斷面水準測量（外業部分）。每次載入都會隨機產生地形與儀器高。</p>
-  <p><b>流程</b>：整平（腳螺旋讓圓盒氣泡居中）→ 轉向對準水準尺 → 對焦 → 讀上、中、下絲 → 填記錄本 → 移到 Q 站 → 評分。</p>
-  <p><b>電腦操作</b>：拖曳滑鼠看四周、滾輪縮放視野<br>
-  <kbd>A</kbd><kbd>D</kbd> 水平旋轉儀器（按住 <kbd>Shift</kbd> 加速）<br>
-  <kbd>W</kbd><kbd>S</kbd> 對焦遠／近<br>
-  <kbd>Z</kbd><kbd>X</kbd><kbd>C</kbd> 選腳螺旋①②③（或點螺旋），<kbd>Q</kbd><kbd>E</kbd> 轉動<br>
-  數字鍵輸入讀數，<kbd>Backspace</kbd> 刪除；也可以直接點記錄本上的按鈕</p>
-  <p><b>Quest 操作</b>：手把射線＋板機點按鈕和腳螺旋<br>
-  左搖桿左右：水平旋轉（按住握把加速）<br>
-  左搖桿上下：對焦<br>
-  右搖桿左右：轉動選中的腳螺旋</p>
-  <p class="muted">尺面：黑白方塊每格 5 mm；粗橫線上方的數字是公分值（140 = 1.40 m），數字代表的位置在粗線上；紅點數 = 公尺數。</p>
+  <h1>水準測量 VR 練習（試題九）</h1>
+  <p>先選模式。第一次用請選「練習模式」，系統會一步一步帶你做，左邊的面板會告訴你下一步要做什麼。</p>
+  <p><button class="pri" id="mPractice">練習模式</button><button id="mExam">實戰模式</button></p>
+  <p><b>電腦操作</b>（Quest 上用手把，見右側面板說明）<br>
+  拖曳滑鼠：看四周　滾輪：放大縮小<br>
+  點面板上的按鈕：<b>點一下 = 轉一小格，按住 = 連續轉</b><br>
+  <kbd>A</kbd><kbd>D</kbd> 鏡頭左右微調（加 <kbd>Shift</kbd> 大轉）<br>
+  <kbd>W</kbd><kbd>S</kbd> 對焦遠／近　數字鍵：輸入讀數</p>
   <p><button id="hideHud">收起說明</button></p>
 </div>
 <button id="hudToggle">說明</button>
@@ -43,7 +39,7 @@
 <script type="module">
 import * as THREE from 'three';
 
-// ───────────── 基本場景 ─────────────
+// ═════════════ 基本場景 ═════════════
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
@@ -68,12 +64,17 @@ const V3 = THREE.Vector3, UP = new V3(0, 1, 0);
 const rnd = (a, b) => a + Math.random() * (b - a);
 const r3 = v => Math.round(v * 1000) / 1000;
 const FONT = '"Microsoft JhengHei","PingFang TC","Noto Sans TC","Noto Sans CJK TC",sans-serif';
+const DEG = Math.PI / 180, MIN = DEG / 60;
 function setLayer(o, l) { o.traverse(c => c.layers.set(l)); }
+function at(o, x, y, z) { o.position.set(x, y, z); return o; }
 
-// ───────────── 題目資料（隨機） ─────────────
+let MODE = 'menu';            // 'menu' | 'practice' | 'exam'
+const practiceOnly = [];      // 練習模式才顯示的 3D 物件
+
+// ═════════════ 題目資料（隨機） ═════════════
 const NAMES = 'ABCDEFG';
-const SX = [0, 20, 40, 60, 80, 100, 120];          // 樁位 x（間距 20 m，1k+000 ~ 1k+120）
-let D;                                              // 本次題目資料
+const SX = [0, 20, 40, 60, 80, 100, 120];
+let D;
 function interp(g, x) {
   if (x <= SX[0]) return g[0];
   if (x >= SX[6]) return g[6];
@@ -84,7 +85,7 @@ function genData() {
   for (;;) {
     const g = [0];
     for (let i = 1; i < 7; i++) g.push(g[i - 1] + rnd(-0.45, 0.45));
-    const tops = g.map(v => v + 0.02);            // 木樁頂（鋼釘）比地面高 2 cm
+    const tops = g.map(v => v + 0.02);
     const st = [{ name: 'P', x: 30, z: 1.5, pts: [0, 1, 2, 3] }, { name: 'Q', x: 90, z: 1.5, pts: [3, 4, 5, 6] }];
     let ok = true;
     for (const s of st) {
@@ -99,14 +100,14 @@ function genData() {
 }
 D = genData();
 const groundAt = x => interp(D.g, x);
-function trueRead(si, pi) {            // 正確讀數（補償器正常時的水平視線）
+function trueRead(si, pi) {
   const s = D.st[si];
   const dist = Math.hypot(SX[pi] - s.x, 0 - s.z);
   const mid = s.gy + s.ih - D.tops[pi];
   return { mid, up: mid + dist / 200, low: mid - dist / 200, dist };
 }
 
-// ───────────── 地面、道路、樹 ─────────────
+// ═════════════ 地面、道路、樹 ═════════════
 const world = new THREE.Group(); scene.add(world);
 let groundMesh, pathMesh;
 function buildGround() {
@@ -130,24 +131,51 @@ buildGround();
   const trunkM = new THREE.MeshLambertMaterial({ color: 0x6b4a2b }), leafM = new THREE.MeshLambertMaterial({ color: 0x3d6b2f });
   for (let i = 0; i < 40; i++) {
     const x = rnd(-80, 200), z = (Math.random() < 0.5 ? -1 : 1) * rnd(12, 90), h = rnd(4, 9);
-    const t = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.22, h * 0.4, 6), trunkM); t.position.set(x, h * 0.2, z);
-    const c = new THREE.Mesh(new THREE.ConeGeometry(h * 0.28, h * 0.7, 8), leafM); c.position.set(x, h * 0.62, z);
-    world.add(t, c);
+    world.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.22, h * 0.4, 6), trunkM), x, h * 0.2, z));
+    world.add(at(new THREE.Mesh(new THREE.ConeGeometry(h * 0.28, h * 0.7, 8), leafM), x, h * 0.62, z));
   }
   const bM = new THREE.MeshLambertMaterial({ color: 0xd9d2c3 });
-  for (const [x, z, w, h] of [[-40, -70, 18, 8], [150, -80, 24, 11], [60, 110, 30, 7]]) {
-    const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, 10), bM); b.position.set(x, h / 2, z); world.add(b);
-  }
+  for (const [x, z, w, h] of [[-40, -70, 18, 8], [150, -80, 24, 11], [60, 110, 30, 7]])
+    world.add(at(new THREE.Mesh(new THREE.BoxGeometry(w, h, 10), bM), x, h / 2, z));
 }
 
-// ───────────── 水準尺（5 mm 式，自繪） ─────────────
-function staffCanvas(m) {                      // 一張貼圖 = 1 公尺
+// ═════════════ 文字標籤（3D 浮動） ═════════════
+function labelTex(text, color = '#1f5fa8', bg = '#ffffff') {
+  const c = document.createElement('canvas'), x = c.getContext('2d'), fs = 52;
+  x.font = `500 ${fs}px ${FONT}`;
+  c.width = Math.ceil(x.measureText(text).width) + 44; c.height = fs + 30;
+  x.font = `500 ${fs}px ${FONT}`;
+  x.fillStyle = bg; x.strokeStyle = color; x.lineWidth = 5;
+  x.beginPath(); x.roundRect(3, 3, c.width - 6, c.height - 6, 16); x.fill(); x.stroke();
+  x.fillStyle = color; x.textBaseline = 'middle'; x.fillText(text, 22, c.height / 2 + 2);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = MAXANI;
+  return { t, aspect: c.width / c.height };
+}
+function makeSprite(text, h, color, bg) {
+  const { t, aspect } = labelTex(text, color, bg);
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true }));
+  s.scale.set(h * aspect, h, 1); s.renderOrder = 20; s.userData.aspect = aspect;
+  return s;
+}
+function addLabel(parent, text, anchor, pos, color = '#1f5fa8') {
+  const g = new THREE.Group();
+  const s = makeSprite(text, 0.03, color); s.position.copy(pos);
+  const ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints([anchor, pos]), new THREE.LineBasicMaterial({ color, depthTest: false }));
+  ln.renderOrder = 19;
+  const dot = new THREE.Mesh(new THREE.SphereGeometry(0.004, 8, 6), new THREE.MeshBasicMaterial({ color, depthTest: false }));
+  dot.position.copy(anchor); dot.renderOrder = 19;
+  g.add(ln, s, dot); parent.add(g); setLayer(g, UI); practiceOnly.push(g);
+  return g;
+}
+
+// ═════════════ 水準尺（5 mm 式，自繪） ═════════════
+function staffCanvas(m) {
   const W = 256, Hh = 2048, s = Hh / 1000, c = document.createElement('canvas'); c.width = W; c.height = Hh;
   const x = c.getContext('2d'), Y = mm => Hh - mm * s;
   x.fillStyle = '#fbf3cf'; x.fillRect(0, 0, W, Hh);
   x.fillStyle = '#151515';
-  for (let k = 0; k < 200; k += 2) x.fillRect(14, Y(k * 5 + 5), 96, 5 * s);       // 5 mm 黑白方塊
-  for (let q = 0; q < 20; q += 2) x.fillRect(96, Y(q * 50 + 50), 22, 50 * s);      // 每 5 cm 連成 E 字
+  for (let k = 0; k < 200; k += 2) x.fillRect(14, Y(k * 5 + 5), 96, 5 * s);
+  for (let q = 0; q < 20; q += 2) x.fillRect(96, Y(q * 50 + 50), 22, 50 * s);
   for (let d = 0; d < 10; d++) {
     const mm = d * 100, cm = m * 100 + d * 10;
     x.fillStyle = '#151515'; x.fillRect(122, Y(mm) - 2, W - 122, 4);
@@ -163,7 +191,8 @@ function staffCanvas(m) {                      // 一張貼圖 = 1 公尺
 const staffTex = [0, 1, 2].map(staffCanvas);
 const staffBodyM = new THREE.MeshLambertMaterial({ color: 0xe8d9a0 });
 const staffFaceM = staffTex.map(t => new THREE.MeshBasicMaterial({ map: t }));
-const staffs = [];
+const staffs = [], roleLabels = [];
+const ROLE = ['A 起點（高度已知）', 'B 中間點', 'C 中間點', 'D 接力點', 'E 中間點', 'F 中間點', 'G 終點（高度已知）'];
 const stakeM = new THREE.MeshLambertMaterial({ color: 0x9a7448 }), nailM = new THREE.MeshLambertMaterial({ color: 0x777777 });
 function signTex(txt) {
   const c = document.createElement('canvas'); c.width = 128; c.height = 128; const x = c.getContext('2d');
@@ -173,42 +202,40 @@ function signTex(txt) {
 }
 const stakeGroup = new THREE.Group(); world.add(stakeGroup);
 function buildStakes() {
-  stakeGroup.clear(); staffs.length = 0;
+  stakeGroup.clear(); staffs.length = 0; roleLabels.length = 0;
   for (let i = 0; i < 7; i++) {
     const top = D.tops[i], x0 = SX[i];
-    const stake = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.3, 0.03), stakeM); stake.position.set(x0, top - 0.15, 0);
-    const nail = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.01, 8), nailM); nail.position.set(x0, top + 0.004, 0);
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.7, 0.03), stakeM); post.position.set(x0 + 0.5, groundAt(x0) + 0.35, -0.6);
+    stakeGroup.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.3, 0.03), stakeM), x0, top - 0.15, 0));
+    stakeGroup.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.01, 8), nailM), x0, top + 0.004, 0));
+    stakeGroup.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.7, 0.03), stakeM), x0 + 0.5, groundAt(x0) + 0.35, -0.6));
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.3), new THREE.MeshBasicMaterial({ map: signTex(NAMES[i]), side: THREE.DoubleSide }));
-    sign.position.set(x0 + 0.5, groundAt(x0) + 0.75, -0.6);
-    stakeGroup.add(stake, nail, post, sign);
-    stakeGroup.userData['sign' + i] = sign;
-    // 尺：立在鋼釘上，正面朝向目前測站
+    stakeGroup.add(at(sign, x0 + 0.5, groundAt(x0) + 0.75, -0.6));
     const st = new THREE.Group(); st.position.set(x0, top, 0); st.userData.pt = i;
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.06, 3, 0.025), staffBodyM); body.position.y = 1.5; st.add(body);
-    for (let m = 0; m < 3; m++) {
-      const f = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 1), staffFaceM[m]); f.position.set(0, m + 0.5, 0.0131); st.add(f);
-    }
+    for (let m = 0; m < 3; m++) st.add(at(new THREE.Mesh(new THREE.PlaneGeometry(0.05, 1), staffFaceM[m]), 0, m + 0.5, 0.0131));
     stakeGroup.add(st); staffs.push(st);
+    const rl = makeSprite(ROLE[i], 1, i === 0 || i === 6 ? '#a83a1f' : '#1f5fa8');
+    rl.position.set(x0, top + 3.4, 0); rl.layers.set(UI); rl.userData.base = top;
+    stakeGroup.add(rl); roleLabels.push(rl);
   }
 }
 buildStakes();
 
-// ───────────── 水準儀＋腳架 ─────────────
+// ═════════════ 水準儀＋腳架 ═════════════
 const inst = new THREE.Group(); scene.add(inst);
-const tilted = new THREE.Group(); inst.add(tilted);          // 基座（受腳架傾斜與腳螺旋影響）
-const upper = new THREE.Group(); tilted.add(upper);           // 望遠鏡（可水平旋轉）
+const tilted = new THREE.Group(); inst.add(tilted);
+const upper = new THREE.Group(); tilted.add(upper);
 const legs = new THREE.Group(); inst.add(legs);
 const darkM = new THREE.MeshLambertMaterial({ color: 0x2c2f33 }), bodyM = new THREE.MeshLambertMaterial({ color: 0xe9ebe6 });
 const legM = new THREE.MeshLambertMaterial({ color: 0xc9a46a });
-function at(o, x, y, z) { o.position.set(x, y, z); return o; }
 function rod(a, b, r, m) {
   const d = new V3().subVectors(b, a), o = new THREE.Mesh(new THREE.CylinderGeometry(r, r, d.length(), 8), m);
   o.position.copy(a).addScaledVector(d, 0.5); o.quaternion.setFromUnitVectors(UP, d.normalize()); return o;
 }
-const SCREW_R = 0.055, SCREW_A = [90, 210, 330].map(a => a * Math.PI / 180);
-const SCREW_COL = [0xd23b3b, 0x2f9e44, 0x1f5fa8], SCREW_NAME = ['①紅', '②綠', '③藍'];
+const SCREW_R = 0.055, SCREW_A = [90, 210, 330].map(a => a * DEG);
+const SCREW_COL = [0xd23b3b, 0x2f9e44, 0x1f5fa8], SCREW_CSS = ['#d23b3b', '#2f9e44', '#1f5fa8'], SCREW_NAME = ['紅', '綠', '藍'];
 const screwMeshes = [];
+let sightLine;
 {
   tilted.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.068, 0.012, 24), darkM), 0, 0.006, 0));
   tilted.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.012, 24), darkM), 0, 0.045, 0));
@@ -216,39 +243,55 @@ const screwMeshes = [];
     const s = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.026, 16), new THREE.MeshLambertMaterial({ color: SCREW_COL[k] }));
     s.position.set(SCREW_R * Math.cos(a), 0.026, SCREW_R * Math.sin(a)); s.userData.screw = k; tilted.add(s); screwMeshes.push(s);
   });
-  // 圓盒氣泡（在基座上，靠玩家這側）
   const vial = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.012, 24), new THREE.MeshLambertMaterial({ color: 0xcfe9f2 }));
-  vial.position.set(0.0, 0.057, 0.035); tilted.add(vial);
+  vial.position.set(0, 0.057, 0.035); tilted.add(vial);
   const ring = new THREE.Mesh(new THREE.TorusGeometry(0.008, 0.0008, 6, 24), darkM); ring.rotation.x = Math.PI / 2; ring.position.set(0, 0.0635, 0.035); tilted.add(ring);
   const bubble = new THREE.Mesh(new THREE.SphereGeometry(0.0055, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }));
   bubble.scale.y = 0.4; bubble.position.set(0, 0.063, 0.035); tilted.add(bubble); tilted.userData.bubble = bubble;
-  // 望遠鏡本體：視線沿 upper 的 -z
   upper.position.y = 0.17;
   upper.add(new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.09, 0.2), bodyM));
   const obj = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.05, 20), darkM); obj.rotation.x = Math.PI / 2; obj.position.z = -0.12; upper.add(obj);
+  const lens = new THREE.Mesh(new THREE.CircleGeometry(0.026, 20), new THREE.MeshBasicMaterial({ color: 0x5fa8d8 })); lens.position.z = -0.1451; lens.rotation.y = Math.PI; upper.add(lens);
   const eye = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.04, 16), darkM); eye.rotation.x = Math.PI / 2; eye.position.z = 0.12; upper.add(eye);
   const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.02, 16), darkM); knob.rotation.z = Math.PI / 2; knob.position.set(0.048, 0.01, -0.02); upper.add(knob);
   const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, 0.12, 16), bodyM); neck.position.y = -0.105; upper.add(neck);
-  const sight = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.012, 0.12), darkM); sight.position.set(0, 0.052, 0); upper.add(sight);
+  upper.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.012, 0.12), darkM), 0, 0.052, 0));
+  // 視線（練習模式）：從鏡頭往前射出的紅色虛線
+  const sg = new THREE.BufferGeometry().setFromPoints([new V3(0, 0, -0.15), new V3(0, 0, -70)]);
+  sightLine = new THREE.Line(sg, new THREE.LineDashedMaterial({ color: 0xe03131, dashSize: 0.25, gapSize: 0.15 }));
+  sightLine.computeLineDistances(); upper.add(sightLine); practiceOnly.push(sightLine);
 }
-setLayer(inst, UI);          // 望遠鏡相機看不到儀器本身
+setLayer(inst, UI);
+// 儀器標籤（練習模式）
+addLabel(upper, '鏡頭（前面，從這裡看出去）', new V3(0, 0, -0.15), new V3(0, 0.13, -0.24), '#c0281e');
+addLabel(upper, '目鏡（後面，眼睛靠這裡）', new V3(0, 0, 0.14), new V3(-0.05, 0.12, 0.2));
+addLabel(upper, '對焦旋鈕', new V3(0.058, 0.01, -0.02), new V3(0.2, 0.07, -0.05));
+addLabel(tilted, '氣泡：要在小圈圈中間', new V3(0, 0.064, 0.035), new V3(-0.2, 0.11, 0.12));
+addLabel(tilted, '腳螺旋（紅綠藍三顆，用來調水平）', new V3(SCREW_R * Math.cos(SCREW_A[2]), 0.03, SCREW_R * Math.sin(SCREW_A[2])), new V3(0.22, -0.03, 0.12));
+const legLabel = addLabel(inst, '腳架', new V3(0.25, 0.7, 0.15), new V3(0.4, 0.8, 0.25), '#6b4a2b');
 
-// ───────────── 儀器狀態 ─────────────
-const COMP_RANGE = 15 / 60 * Math.PI / 180;    // 補償器範圍 ±15′
-const S = { si: 0, yaw: 0, lf: Math.log(3), screw: [0, 0, 0], tripod: new THREE.Vector2(), sel: -1 };
-const G = new THREE.Vector2();                 // 基座坡度向量（x, z），大小 = 傾斜角（rad）
+// ═════════════ 儀器狀態 ═════════════
+const COMP_RANGE = 15 * MIN, LEVEL_OK = 10 * MIN;
+const STEP = { yawFine: 0.02 * DEG, yawBig: 1.5 * DEG, focus: 0.035, screw: 0.00006 };
+const S = { si: 0, yaw: 0, lf: Math.log(3), screw: [0, 0, 0], tripod: new THREE.Vector2(), sel: 0 };
+const G = new THREE.Vector2();
+function computeG(screws, out) {
+  out.copy(S.tripod);
+  screws.forEach((h, k) => { out.x += 2 / (3 * SCREW_R) * h * Math.cos(SCREW_A[k]); out.y += 2 / (3 * SCREW_R) * h * Math.sin(SCREW_A[k]); });
+  return out;
+}
 function updateTilt() {
-  G.copy(S.tripod);
-  S.screw.forEach((h, k) => { G.x += 2 / (3 * SCREW_R) * h * Math.cos(SCREW_A[k]); G.y += 2 / (3 * SCREW_R) * h * Math.sin(SCREW_A[k]); });
-  const n = new V3(-G.x, 1, -G.y).normalize();
-  tilted.quaternion.setFromUnitVectors(UP, n);
+  computeG(S.screw, G);
+  tilted.quaternion.setFromUnitVectors(UP, new V3(-G.x, 1, -G.y).normalize());
   const b = tilted.userData.bubble, k = 2.6, max = 0.016;
-  const bx = THREE.MathUtils.clamp(G.x * k, -max, max), bz = THREE.MathUtils.clamp(G.y * k, -max, max);
-  b.position.x = bx; b.position.z = 0.035 + bz;          // 氣泡跑向高的一側
+  b.position.x = THREE.MathUtils.clamp(G.x * k, -max, max); b.position.z = 0.035 + THREE.MathUtils.clamp(G.y * k, -max, max);
 }
+function turnScrew(k, dir, mult = 1) { S.sel = k; S.screw[k] = THREE.MathUtils.clamp(S.screw[k] + dir * STEP.screw * mult, -0.01, 0.01); updateTilt(); }
+function turnYaw(d) { S.yaw += d; }
+function focusStep(dir) { S.lf = THREE.MathUtils.clamp(S.lf + dir * STEP.focus, Math.log(1.5), Math.log(150)); }
 
-const telCam = new THREE.PerspectiveCamera(1.6, 1, 0.3, 800);   // 視野 1.6°（約 30 倍）
-const TEL_HALF = Math.tan(THREE.MathUtils.degToRad(1.6 / 2));
+const telCam = new THREE.PerspectiveCamera(1.6, 1, 0.3, 800);
+const TEL_HALF = Math.tan(1.6 / 2 * DEG);
 scene.add(telCam);
 function placeStation(si, fresh = true) {
   S.si = si; const s = D.st[si];
@@ -262,18 +305,19 @@ function placeStation(si, fresh = true) {
   legs.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.03, 24), legM), 0, hh - 0.015, 0));
   setLayer(legs, UI);
   tilted.position.y = hh;
+  legLabel.position.y = hh - 1.2;
   if (fresh) {
-    const mag = rnd(0.4, 1.2) * Math.PI / 180, dir = rnd(0, Math.PI * 2);
+    const mag = rnd(0.4, 1.0) * DEG, dir = rnd(0, Math.PI * 2);
     S.tripod.set(Math.cos(dir) * mag, Math.sin(dir) * mag);
     S.screw = [0, 0, 0];
-    S.yaw = rnd(-0.6, 0.6); S.lf = Math.log(rnd(2, 4)); S.sel = -1;
+    S.yaw = rnd(-0.5, 0.5); S.lf = Math.log(rnd(2, 4)); S.sel = 0;
   }
   for (const st of staffs) st.lookAt(s.x, st.position.y, s.z);
   rig.position.set(s.x, s.gy, s.z + 0.6);
   updateTilt();
 }
 
-// ───────────── 望遠鏡畫面（render target + 對焦模糊） ─────────────
+// ═════════════ 望遠鏡畫面 ═════════════
 const rt = new THREE.WebGLRenderTarget(1024, 1024, { generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter });
 const telMat = new THREE.ShaderMaterial({
   uniforms: { map: { value: rt.texture }, bias: { value: 0 } },
@@ -287,23 +331,33 @@ const telMat = new THREE.ShaderMaterial({
     }`
 });
 const stationUI = new THREE.Group(); rig.add(stationUI);
-const TEL_R = 0.28;
+const TEL_R = 0.26;
 const telPanel = new THREE.Mesh(new THREE.CircleGeometry(TEL_R, 64), telMat);
-telPanel.position.set(0.48, 1.74, -1.05); telPanel.rotation.y = -0.3;
+telPanel.position.set(0.36, 1.74, -1.05); telPanel.rotation.y = -0.25;
 stationUI.add(telPanel);
+let wireLabels;
 {
+  const R = 512, st = 0.005 / TEL_HALF * R;
   const c = document.createElement('canvas'); c.width = c.height = 1024; const x = c.getContext('2d');
-  const R = 512, st = 0.005 / TEL_HALF * R;               // 上下絲：±1/200 rad
   x.strokeStyle = '#101010'; x.lineWidth = 2.5;
   x.beginPath(); x.moveTo(R, 0); x.lineTo(R, 1024); x.moveTo(0, R); x.lineTo(1024, R);
   x.moveTo(R - 110, R - st); x.lineTo(R + 110, R - st); x.moveTo(R - 110, R + st); x.lineTo(R + 110, R + st); x.stroke();
   x.lineWidth = 14; x.strokeStyle = '#1b1b1b'; x.beginPath(); x.arc(R, R, R - 7, 0, 7); x.stroke();
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
-  const cross = new THREE.Mesh(new THREE.CircleGeometry(TEL_R, 64), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false }));
-  cross.position.z = 0.002; telPanel.add(cross);
+  telPanel.add(at(new THREE.Mesh(new THREE.CircleGeometry(TEL_R, 64), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false })), 0, 0, 0.002));
+  // 三條線的名稱（練習模式）
+  const c2 = document.createElement('canvas'); c2.width = c2.height = 1024; const y = c2.getContext('2d');
+  y.font = `500 46px ${FONT}`; y.textBaseline = 'middle'; y.textAlign = 'right'; y.lineWidth = 8; y.strokeStyle = '#ffffff';
+  const lab = (t2, py, col) => { y.strokeText(t2, R - 125, py); y.fillStyle = col; y.fillText(t2, R - 125, py); };
+  lab('上線', R - st, '#1f5fa8'); lab('下線', R + st, '#1f5fa8');
+  y.textAlign = 'left'; y.strokeText('中線（主要讀這條）', 80, R - 34); y.fillStyle = '#c0281e'; y.fillText('中線（主要讀這條）', 80, R - 34);
+  const t2 = new THREE.CanvasTexture(c2); t2.colorSpace = THREE.SRGBColorSpace;
+  wireLabels = at(new THREE.Mesh(new THREE.CircleGeometry(TEL_R, 64), new THREE.MeshBasicMaterial({ map: t2, transparent: true, depthWrite: false })), 0, 0, 0.004);
+  telPanel.add(wireLabels); practiceOnly.push(wireLabels);
+  const title = makeSprite('望遠鏡裡看到的畫面', 0.035, '#2b2a27'); title.position.set(0, TEL_R + 0.035, 0); telPanel.add(title);
 }
 
-// ───────────── 2D 面板工具 ─────────────
+// ═════════════ 2D 面板工具 ═════════════
 class Panel {
   constructor(w, h, pw, ph) {
     this.c = document.createElement('canvas'); this.c.width = pw; this.c.height = ph; this.x = this.c.getContext('2d');
@@ -311,92 +365,134 @@ class Panel {
     this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: this.tex }));
     this.mesh.userData.panel = this; this.regions = [];
   }
-  hit(uv) {
+  find(uv) {
     const px = uv.x * this.c.width, py = (1 - uv.y) * this.c.height;
-    for (const r of this.regions) if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) { r.fn(); return true; }
-    return false;
+    for (const r of this.regions) if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) return r;
+    return null;
   }
-  rect(x0, y0, w, h, fill, stroke) { const x = this.x; x.beginPath(); x.roundRect(x0, y0, w, h, 10); if (fill) { x.fillStyle = fill; x.fill(); } if (stroke) { x.strokeStyle = stroke; x.lineWidth = 2; x.stroke(); } }
+  bg(col = '#fbfaf6') { this.regions = []; this.x.fillStyle = col; this.x.fillRect(0, 0, this.c.width, this.c.height); }
+  rect(x0, y0, w, h, fill, stroke, lw = 2) { const x = this.x; x.beginPath(); x.roundRect(x0, y0, w, h, 12); if (fill) { x.fillStyle = fill; x.fill(); } if (stroke) { x.strokeStyle = stroke; x.lineWidth = lw; x.stroke(); } }
   text(t, x0, y0, size = 26, color = '#2b2a27', align = 'left', weight = '') {
     const x = this.x; x.font = `${weight} ${size}px ${FONT}`; x.fillStyle = color; x.textAlign = align; x.textBaseline = 'middle'; x.fillText(t, x0, y0);
   }
-  btn(x0, y0, w, h, label, fn, { fill = '#ffffff', color = '#2b2a27', size = 28, stroke = '#9a968c' } = {}) {
-    this.rect(x0, y0, w, h, fill, stroke); this.text(label, x0 + w / 2, y0 + h / 2 + 1, size, color, 'center', '500');
-    this.regions.push({ x: x0, y: y0, w, h, fn });
+  wrap(t, x0, y0, maxW, size = 28, color = '#2b2a27', lh = 1.5, weight = '') {      // 中文逐字換行，回傳下一行 y
+    const x = this.x; x.font = `${weight} ${size}px ${FONT}`; x.fillStyle = color; x.textAlign = 'left'; x.textBaseline = 'middle';
+    let line = '';
+    for (const ch of t) {
+      if (x.measureText(line + ch).width > maxW && line) { x.fillText(line, x0, y0); y0 += size * lh; line = ch; }
+      else line += ch;
+    }
+    if (line) { x.fillText(line, x0, y0); y0 += size * lh; }
+    return y0;
+  }
+  btn(x0, y0, w, h, label, fn, { fill = '#ffffff', color = '#2b2a27', size = 30, stroke = '#9a968c', rep = false, lw = 2 } = {}) {
+    this.rect(x0, y0, w, h, fill, stroke, lw); this.text(label, x0 + w / 2, y0 + h / 2 + 1, size, color, 'center', '500');
+    this.regions.push({ x: x0, y: y0, w, h, fn, rep });
   }
   update() { this.tex.needsUpdate = true; }
 }
 
 // 氣泡放大圖
-const bub = new Panel(0.16, 0.16, 256, 256);
-bub.mesh.position.set(0.12, 1.5, -1.0); bub.mesh.rotation.y = -0.15; stationUI.add(bub.mesh);
+const bub = new Panel(0.17, 0.17, 256, 256);
+bub.mesh.position.set(-0.08, 1.6, -1.0); bub.mesh.rotation.y = 0.1; stationUI.add(bub.mesh);
 function drawBubble() {
-  const x = bub.x, R = 128, sc = 100 / (0.6 * Math.PI / 180);
+  const x = bub.x, R = 128, sc = 100 / (0.6 * DEG);
   x.fillStyle = '#20262c'; x.fillRect(0, 0, 256, 256);
-  x.fillStyle = '#cfe9f2'; x.beginPath(); x.arc(R, R, 108, 0, 7); x.fill();
-  const bx = THREE.MathUtils.clamp(G.x * sc, -90, 90), by = THREE.MathUtils.clamp(G.y * sc, -90, 90);
-  const ok = G.length() <= 10 / 60 * Math.PI / 180;
+  x.fillStyle = '#cfe9f2'; x.beginPath(); x.arc(R, R + 10, 104, 0, 7); x.fill();
+  const bx = THREE.MathUtils.clamp(G.x * sc, -88, 88), by = THREE.MathUtils.clamp(G.y * sc, -88, 88);
+  const ok = G.length() <= LEVEL_OK;
+  x.strokeStyle = ok ? '#2f9e44' : '#222'; x.lineWidth = ok ? 6 : 3; x.beginPath(); x.arc(R, R + 10, LEVEL_OK * sc + 6, 0, 7); x.stroke();
   x.fillStyle = '#ffffff'; x.strokeStyle = '#7fa9b8'; x.lineWidth = 2;
-  x.beginPath(); x.arc(R + bx, R + by, 18, 0, 7); x.fill(); x.stroke();
-  x.strokeStyle = ok ? '#2f9e44' : '#222'; x.lineWidth = 3; x.beginPath(); x.arc(R, R, 10 / 60 * Math.PI / 180 * sc + 4, 0, 7); x.stroke();
-  x.font = `20px ${FONT}`; x.fillStyle = '#e8e8e8'; x.textAlign = 'center'; x.textBaseline = 'top'; x.fillText('圓盒氣泡（放大）', R, 4);
+  x.beginPath(); x.arc(R + bx, R + 10 + by, 18, 0, 7); x.fill(); x.stroke();
+  x.font = `22px ${FONT}`; x.fillStyle = ok ? '#8ce99a' : '#e8e8e8'; x.textAlign = 'center'; x.textBaseline = 'top';
+  x.fillText(ok ? '水平了 ✓' : '氣泡（放大）', R, 2);
   bub.update();
 }
 
-// 控制面板（腳螺旋選擇＋提示）
-const ctl = new Panel(0.62, 0.17, 1000, 274);
-ctl.mesh.position.set(0.52, 1.33, -1.0); ctl.mesh.rotation.set(-0.35, -0.3, 0, 'YXZ'); stationUI.add(ctl.mesh);
+// 操作面板
+const ctl = new Panel(0.66, 0.44, 1100, 733);
+ctl.mesh.position.set(0.98, 1.3, -0.62); ctl.mesh.rotation.set(-0.3, -0.85, 0, 'YXZ'); stationUI.add(ctl.mesh);
 function drawCtl() {
-  const p = ctl; p.regions = []; p.x.fillStyle = '#f7f5ef'; p.x.fillRect(0, 0, 1000, 274);
-  p.text(`測站 ${D.st[S.si].name}　選腳螺旋：`, 20, 40, 28, '#2b2a27', 'left', '500');
-  [0, 1, 2].forEach(k => {
-    const on = S.sel === k, col = '#' + SCREW_COL[k].toString(16).padStart(6, '0');
-    p.btn(330 + k * 170, 10, 155, 62, SCREW_NAME[k], () => { S.sel = on ? -1 : k; drawCtl(); }, { fill: on ? col : '#fff', color: on ? '#fff' : col, stroke: col });
-  });
-  p.text('左搖桿 ←→ 水平旋轉（按握把加速）　左搖桿 ↑↓ 對焦', 20, 110, 26, '#4a4740');
-  p.text('右搖桿 ←→ 轉動選中的腳螺旋（板機點螺旋也能選）', 20, 150, 26, '#4a4740');
-  p.text('電腦：A/D 旋轉、W/S 對焦、Z/X/C 選螺旋、Q/E 轉動', 20, 190, 26, '#4a4740');
-  p.text('氣泡跑向「高」的那一側；氣泡進入圓圈內補償器才有效。', 20, 236, 26, '#8a5a00');
+  const p = ctl; p.bg('#f7f5ef');
+  p.text('操作面板', 24, 36, 34, '#2b2a27', 'left', '500');
+  p.text('點一下 = 轉一小格　按住 = 連續轉', 1076, 36, 26, '#8a5a00', 'right', '500');
+  p.text('轉鏡頭', 24, 120, 30, '#2b2a27', 'left', '500');
+  p.btn(150, 78, 215, 86, '◀◀ 大轉', () => turnYaw(STEP.yawBig), { rep: true });
+  p.btn(375, 78, 215, 86, '◀ 微調', () => turnYaw(STEP.yawFine), { rep: true, fill: '#eef3fa' });
+  p.btn(600, 78, 215, 86, '微調 ▶', () => turnYaw(-STEP.yawFine), { rep: true, fill: '#eef3fa' });
+  p.btn(825, 78, 250, 86, '大轉 ▶▶', () => turnYaw(-STEP.yawBig), { rep: true });
+  p.text('對焦', 24, 228, 30, '#2b2a27', 'left', '500');
+  p.btn(150, 186, 455, 86, '◀ 看近一點', () => focusStep(-1), { rep: true });
+  p.btn(620, 186, 455, 86, '看遠一點 ▶', () => focusStep(1), { rep: true });
+  p.text('腳螺旋', 24, 350, 30, '#2b2a27', 'left', '500');
+  p.text('（調水平用）', 24, 390, 22, '#6b6860');
+  for (let k = 0; k < 3; k++) {
+    const x0 = 150 + k * 310, col = SCREW_CSS[k], on = S.sel === k;
+    p.rect(x0, 292, 295, 150, on ? '#fff8e0' : '#ffffff', col, on ? 5 : 2);
+    p.text(`${SCREW_NAME[k]}色螺旋`, x0 + 147, 318, 26, col, 'center', '500');
+    p.btn(x0 + 12, 342, 130, 88, '↺', () => turnScrew(k, -1), { rep: true, color: col, stroke: col, size: 44 });
+    p.btn(x0 + 153, 342, 130, 88, '↻', () => turnScrew(k, 1), { rep: true, color: col, stroke: col, size: 44 });
+  }
+  p.text('↻ 把那一角抬高，氣泡會往那顆螺旋跑；↺ 相反。', 24, 478, 26, '#4a4740');
+  p.text('Quest 手把：', 24, 540, 26, '#2b2a27', 'left', '500');
+  p.text('按住握把（中指按鈕）再轉動手把 = 像用手推儀器一樣大幅轉向', 24, 582, 25, '#4a4740');
+  p.text('左搖桿 輕推左右 = 微調一格（推住不放 = 連續）　上下 = 對焦', 24, 622, 25, '#4a4740');
+  p.text('右搖桿 左右 = 轉最後選的腳螺旋　板機 = 點按鈕', 24, 662, 25, '#4a4740');
+  p.text('電腦：A/D 微調（Shift 大轉）、W/S 對焦、數字鍵輸入讀數', 24, 702, 25, '#4a4740');
   p.update();
 }
 
-// ───────────── 記錄本 ─────────────
+// ═════════════ 記錄本資料 ═════════════
 const ROWS = [
   { st: 0, pt: 0, kind: '後視' }, { st: 0, pt: 1, kind: '間視' }, { st: 0, pt: 2, kind: '間視' }, { st: 0, pt: 3, kind: '前視' },
   { st: 1, pt: 3, kind: '後視' }, { st: 1, pt: 4, kind: '間視' }, { st: 1, pt: 5, kind: '間視' }, { st: 1, pt: 6, kind: '前視' }];
+const rowOf = (si, pt) => ROWS.findIndex(r => r.st === si && r.pt === pt);
 const COLS = ['上絲', '中絲', '下絲'];
 let entries, meta, sel, view = 'book';
 function resetBook() { entries = ROWS.map(() => ['', '', '']); meta = ROWS.map(() => [null, null, null]); sel = { r: 0, c: 0 }; view = 'book'; }
 resetBook();
 const fb = new Panel(0.80, 0.72, 1120, 1008);
-fb.mesh.position.set(-0.62, 1.32, -0.72); fb.mesh.rotation.set(-0.28, 0.62, 0, 'YXZ'); stationUI.add(fb.mesh);
+fb.mesh.position.set(-0.64, 1.32, -0.72); fb.mesh.rotation.set(-0.25, 0.62, 0, 'YXZ'); stationUI.add(fb.mesh);
 const fmt = s => s ? (s.padEnd(4, '_')[0] + '.' + s.padEnd(4, '_').slice(1)) : '';
 const val = s => s && s.length === 4 ? parseInt(s, 10) / 1000 : null;
 let aimPt = -1, blurBias = 0;
-function press(k) {
+
+function drawFB() {
+  if (MODE === 'menu') drawMenu();
+  else if (MODE === 'practice') drawGuide();
+  else { fb.bg(); if (view === 'book') drawBook(); else drawResults(); }
+  fb.update();
+}
+function drawMenu() {
+  const p = fb; p.bg();
+  p.text('水準測量 VR 練習（試題九）', 560, 80, 44, '#2b2a27', 'center', '500');
+  p.wrap('在虛擬場地上操作水準儀：把儀器調水平、對準遠處的尺、讀出數字，最後算出每支木樁的高度。', 70, 160, 980, 30, '#4a4740');
+  p.btn(70, 280, 980, 230, '', () => startMode('practice'), { fill: '#eef3fa', stroke: '#1f5fa8', lw: 4 });
+  p.text('練習模式', 560, 345, 46, '#1f5fa8', 'center', '500');
+  p.text('一步一步帶你做，標出每個部位，讀錯會提示', 560, 410, 30, '#2b2a27', 'center');
+  p.text('（第一次用請選這個）', 560, 460, 26, '#6b6860', 'center');
+  p.btn(70, 560, 980, 200, '', () => startMode('exam'), { lw: 3 });
+  p.text('實戰模式', 560, 620, 46, '#2b2a27', 'center', '500');
+  p.text('照考試流程自己做，不提示，最後一次評分', 560, 685, 30, '#4a4740', 'center');
+  p.wrap('操作方式：用手把的射線指著按鈕，按板機。右邊有「操作面板」，前方是望遠鏡畫面。', 70, 830, 980, 26, '#6b6860');
+}
+
+// ═════════════ 實戰模式：記錄本 ═════════════
+function pressExam(k) {
   if (view !== 'book') return;
   const { r, c } = sel; let s = entries[r][c];
   if (k === 'back') s = s.slice(0, -1); else if (k === 'clear') s = ''; else if (s.length < 4) s += k;
   entries[r][c] = s; meta[r][c] = null;
-  if (s.length === 4) {
-    meta[r][c] = { aim: aimPt, tilt: G.length() > COMP_RANGE, blur: blurBias > 1.6, st: S.si };
-    nextCell();
-  }
+  if (s.length === 4) { meta[r][c] = { aim: aimPt, tilt: G.length() > COMP_RANGE, blur: blurBias > 1.6, st: S.si }; nextCell(); }
   drawFB();
 }
 function nextCell() { if (sel.c < 2) sel.c++; else if (sel.r < 7) { sel.r++; sel.c = 0; } }
-function drawFB() {
-  const p = fb; p.regions = []; const x = p.x;
-  x.fillStyle = '#fbfaf6'; x.fillRect(0, 0, 1120, 1008);
-  if (view === 'book') drawBook(); else drawResults();
-  p.update();
-}
 function drawBook() {
   const p = fb;
-  p.text('試題九　水準測量記錄（外業）', 20, 38, 32, '#2b2a27', 'left', '500');
+  p.text('實戰模式　水準測量記錄', 20, 38, 32, '#2b2a27', 'left', '500');
   p.text(`目前測站：${D.st[S.si].name}`, 690, 38, 28, '#1f5fa8', 'right', '500');
   const cx = [20, 100, 160, 255, 400, 545, 690];
-  ['測站', '點', '種類', ...COLS].forEach((h, i) => p.text(h, (cx[i] + cx[i + 1]) / 2, 100, 24, '#6b6860', 'center'));
+  ['測站', '點', '種類', '上線', '中線', '下線'].forEach((h, i) => p.text(h, (cx[i] + cx[i + 1]) / 2, 100, 24, '#6b6860', 'center'));
   ROWS.forEach((row, r) => {
     const y = 125 + r * 56, here = row.st === S.si;
     p.rect(20, y, 670, 52, here ? '#ffffff' : '#efede6', '#d5d1c6');
@@ -411,23 +507,30 @@ function drawBook() {
     }
   });
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'back'], lab = { clear: '清除', back: '⌫' };
-  keys.forEach((k, i) => p.btn(720 + (i % 3) * 126, 125 + Math.floor(i / 3) * 90, 116, 80, lab[k] || k, () => press(k), { size: 36 }));
+  keys.forEach((k, i) => p.btn(720 + (i % 3) * 126, 125 + Math.floor(i / 3) * 90, 116, 80, lab[k] || k, () => pressExam(k), { size: 36 }));
   p.btn(720, 490, 368, 70, '下一格 ▶', () => { nextCell(); drawFB(); }, { size: 28 });
-  p.text(`已知：HA = ${D.HA.toFixed(3)} m　HG = ${D.HG.toFixed(3)} m`, 20, 615, 26, '#2b2a27', 'left', '500');
-  p.text('讀數輸入 4 位數字，例如 1437 代表 1.437 m（讀到 mm）。', 20, 660, 24, '#4a4740');
-  p.text(`測站 P：後視 A、間視 B、C、前視 D；測站 Q：後視 D、間視 E、F、前視 G。`, 20, 700, 24, '#4a4740');
-  p.text('尺面：黑白方塊每格 5 mm；粗線上方數字為公分值，紅點數 = 公尺數。', 20, 740, 24, '#4a4740');
-  p.text('檢核：(上絲＋下絲)÷2 ≈ 中絲；視距 = (上絲－下絲)×100。', 20, 780, 24, '#4a4740');
+  p.text(`已知：A 的高度 = ${D.HA.toFixed(3)} m　G 的高度 = ${D.HG.toFixed(3)} m`, 20, 612, 26, '#2b2a27', 'left', '500');
+  p.text('讀數輸入 4 位數字，例如 1437 代表 1.437 m。', 20, 655, 24, '#4a4740');
+  p.text('P 站量 A、B、C、D；Q 站量 D、E、F、G。', 20, 693, 24, '#4a4740');
+  p.text('後視 = 這一站的起點　間視 = 中間點　前視 = 接力點／終點', 20, 731, 24, '#4a4740');
+  p.text('上線、中線、下線 = 望遠鏡裡的三條橫線（課本叫上絲、中絲、下絲）', 20, 769, 24, '#4a4740');
   const other = 1 - S.si;
-  p.btn(20, 880, 330, 92, `移到 ${D.st[other].name} 站`, () => { placeStation(other); sel = { r: other * 4, c: 0 }; drawCtl(); drawFB(); }, { fill: '#eef3fa', color: '#1f5fa8', stroke: '#1f5fa8' });
-  p.btn(370, 880, 330, 92, '結束外業・評分', () => { view = 'result'; drawFB(); }, { fill: '#1f5fa8', color: '#fff', stroke: '#1f5fa8' });
-  p.btn(720, 880, 368, 92, '重新出題', newProblem, { size: 28 });
+  p.btn(20, 880, 260, 92, `移到 ${D.st[other].name} 站`, () => { placeStation(other); sel = { r: other * 4, c: 0 }; drawFB(); }, { fill: '#eef3fa', color: '#1f5fa8', stroke: '#1f5fa8' });
+  p.btn(295, 880, 300, 92, '結束・評分', () => { view = 'result'; drawFB(); }, { fill: '#1f5fa8', color: '#fff', stroke: '#1f5fa8' });
+  p.btn(610, 880, 230, 92, '重新出題', () => startMode('exam'), { size: 28 });
+  p.btn(855, 880, 235, 92, '回選單', () => startMode('menu'), { size: 28 });
+}
+function heightsFrom(mids) {
+  const hiP = D.HA + mids[0], HD = hiP - mids[3], hiQ = HD + mids[4], HGc = hiQ - mids[7], w = HGc - D.HG;
+  const raw = { 1: hiP - mids[1], 2: hiP - mids[2], 3: HD, 4: hiQ - mids[5], 5: hiQ - mids[6] };
+  const corr = { 1: -w / 2, 2: -w / 2, 3: -w / 2, 4: -w, 5: -w };
+  return { hiP, HD, hiQ, HGc, w, raw, corr };
 }
 function drawResults() {
   const p = fb;
   p.text('評分結果（與場地真值比對）', 20, 36, 32, '#2b2a27', 'left', '500');
   const hx = [20, 130, 250, 370, 470, 610, 790];
-  ['點', '你的中絲', '正確', '誤差', '上下絲檢核', '視距 你/實際', '備註'].forEach((h, i) => p.text(h, hx[i] + 4, 86, 22, '#6b6860'));
+  ['點', '你的中線', '正確', '誤差', '上下線檢核', '距離 你/實際', '備註'].forEach((h, i) => p.text(h, hx[i] + 4, 86, 22, '#6b6860'));
   let good = 0;
   ROWS.forEach((row, r) => {
     const y = 108 + r * 50, t = trueRead(row.st, row.pt);
@@ -449,40 +552,234 @@ function drawResults() {
     const notes = [], mt = meta[r][1];
     if (mt) {
       if (mt.st !== row.st) notes.push(`在 ${D.st[mt.st].name} 站讀的`);
-      if (mt.aim !== row.pt) notes.push(mt.aim < 0 ? '十字絲沒對到尺' : `對到的是 ${NAMES[mt.aim]} 尺`);
-      if (mt.tilt) notes.push('氣泡未居中');
-      if (mt.blur) notes.push('未對焦');
+      if (mt.aim !== row.pt) notes.push(mt.aim < 0 ? '十字線沒對到尺' : `對到的是 ${NAMES[mt.aim]} 尺`);
+      if (mt.tilt) notes.push('沒調水平');
+      if (mt.blur) notes.push('沒對焦');
     }
     p.text(notes.join('、'), hx[6] + 6, y + 24, 22, '#c0281e');
   });
-  p.text(`中絲 8 個讀數中，誤差 ≤ 2 mm 的有 ${good} 個。`, 20, 532, 26, '#2b2a27', 'left', '500');
-  // 高程計算（用你的中絲）
+  p.text(`中線 8 個讀數中，誤差 ≤ 2 mm 的有 ${good} 個。`, 20, 532, 26, '#2b2a27', 'left', '500');
   const mids = entries.map(e => val(e[1]));
-  if (mids.some(v => v == null)) {
-    p.text('中絲還沒填完，無法計算高程。', 20, 590, 26, '#a86a00');
-  } else {
-    const hiP = D.HA + mids[0], HD = hiP - mids[3], hiQ = HD + mids[4], HGc = hiQ - mids[7];
-    const w = HGc - D.HG;
-    const raw = { 1: hiP - mids[1], 2: hiP - mids[2], 3: HD, 4: hiQ - mids[5], 5: hiQ - mids[6] };
-    const corr = { 1: -w / 2, 2: -w / 2, 3: -w / 2, 4: -w, 5: -w };
-    p.text(`推算 HG = ${HGc.toFixed(3)}，已知 HG = ${D.HG.toFixed(3)}，閉合差 = ${(w * 1000).toFixed(0)} mm（依測站數比例改正）`, 20, 580, 24, '#2b2a27');
-    ['點', '改正前', '改正後', '真值', '誤差'].forEach((h, i) => p.text(h, 20 + i * 170 + 4, 624, 22, '#6b6860'));
+  if (mids.some(v => v == null)) p.text('中線還沒填完，無法計算高度。', 20, 590, 26, '#a86a00');
+  else {
+    const h = heightsFrom(mids);
+    p.text(`算出 G = ${h.HGc.toFixed(3)}，題目給 G = ${D.HG.toFixed(3)}，差（閉合差）= ${(h.w * 1000).toFixed(0)} mm`, 20, 580, 24);
+    ['點', '改正前', '改正後', '真值', '誤差'].forEach((t, i) => p.text(t, 20 + i * 170 + 4, 624, 22, '#6b6860'));
     [1, 2, 3, 4, 5].forEach((i, k) => {
-      const y = 642 + k * 40, h2 = raw[i] + corr[i], e = Math.round((h2 - D.H[i]) * 1000);
-      p.text(NAMES[i], 24, y + 18, 24); p.text(raw[i].toFixed(3), 194, y + 18, 24); p.text(h2.toFixed(3), 364, y + 18, 24);
+      const y = 642 + k * 40, h2 = h.raw[i] + h.corr[i], e = Math.round((h2 - D.H[i]) * 1000);
+      p.text(NAMES[i], 24, y + 18, 24); p.text(h.raw[i].toFixed(3), 194, y + 18, 24); p.text(h2.toFixed(3), 364, y + 18, 24);
       p.text(D.H[i].toFixed(3), 534, y + 18, 24, '#4a4740');
       p.text(`${e > 0 ? '+' : ''}${e} mm`, 704, y + 18, 24, Math.abs(e) <= 3 ? '#2f7d32' : '#c0281e', 'left', '500');
     });
     p.text('（改正分配方式僅供參考，正式算法以老師網站／官方評審表為準）', 20, 858, 20, '#8a8780');
   }
-  p.btn(20, 900, 520, 90, '回到記錄本', () => { view = 'book'; drawFB(); }, { size: 28 });
-  p.btn(560, 900, 540, 90, '重新出題', newProblem, { size: 28 });
-}
-function newProblem() {
-  D = genData(); buildGround(); buildStakes(); resetBook(); placeStation(0); drawCtl(); drawFB();
+  p.btn(20, 900, 340, 90, '回到記錄本', () => { view = 'book'; drawFB(); }, { size: 28 });
+  p.btn(380, 900, 340, 90, '重新出題', () => startMode('exam'), { size: 28 });
+  p.btn(740, 900, 350, 90, '回選單', () => startMode('menu'), { size: 28 });
 }
 
-// ───────────── 每幀：儀器、對焦、望遠鏡 ─────────────
+// ═════════════ 練習模式：步驟引導 ═════════════
+const WIRE = [{ c: 1, k: 'mid', name: '中線', where: '中間那條長橫線' }, { c: 0, k: 'up', name: '上線', where: '上面那條短橫線' }, { c: 2, k: 'low', name: '下線', where: '下面那條短橫線' }];
+const ROLE_TEXT = {
+  start: 'A 是起點，它的高度題目已經告訴你了。量它是為了知道「儀器的視線有多高」。（課本叫「後視」）',
+  mid: '這是中間點，量它是為了算出它的高度。（課本叫「間視」）',
+  relay: 'D 是接力點：在 P 站量一次，搬到 Q 站還要再量一次，高度才能接力傳下去。（課本叫「前視」）',
+  relayQ: '在 Q 站，D 變成這一站的起點。剛剛已經算出 D 的高度，現在用它來知道 Q 站的視線有多高。（課本叫「後視」）',
+  end: 'G 是終點，題目也給了 G 的高度，最後用來檢查你量得準不準。（課本叫「前視」）',
+};
+let steps = [], gi = 0, gHold = 0, gInput = '', gMsg = '', gMsgCol = '#2b2a27', gTries = 0, gShowHint = false, gFlash = 0;
+function buildSteps() {
+  const s = [];
+  s.push({ kind: 'info', title: '認識水準儀', body: [
+    '水準儀是一支「會自己保持水平」的望遠鏡，架在三腳架上。',
+    '它的工作只有一個：看遠處的尺，讀出「水平視線」碰到尺的高度。',
+    '看看儀器旁邊的藍色標籤：紅色標籤是鏡頭（前面），紅色虛線就是鏡頭看出去的方向。',
+    '前方圓形的畫面，就是從目鏡看進去會看到的東西。'] });
+  s.push({ kind: 'info', title: '這次的任務', body: [
+    '路上有 A～G 七支木樁，每支木樁上都立著一把尺（尺上方有名稱標籤）。',
+    'A 的高度是已知的。我們要量出其他木樁比 A 高或低多少，算出它們的高度。',
+    '儀器會架兩次：先在 P 站量 A、B、C、D，再搬到 Q 站量 D、E、F、G。',
+    '每量一支尺都是同樣三個動作：轉過去對準 → 調清楚 → 讀數字。'] });
+  const seq = [[0, 'start'], [1, 'mid'], [2, 'mid'], [3, 'relay']], seqQ = [[3, 'relayQ'], [4, 'mid'], [5, 'mid'], [6, 'end']];
+  const addStation = (si, list) => {
+    s.push({ kind: 'level', si });
+    list.forEach(([pt, role], idx) => {
+      s.push({ kind: 'aim', si, pt, role, first: idx === 0 && si === 0 });
+      s.push({ kind: 'focus', si, pt });
+      WIRE.forEach((w, wi) => s.push({ kind: 'read', si, pt, w, first: idx === 0 && si === 0 && wi === 0 }));
+    });
+  };
+  addStation(0, seq);
+  s.push({ kind: 'move' });
+  addStation(1, seqQ);
+  s.push({ kind: 'done' });
+  return s;
+}
+function levelHint() {
+  let best = null; const g2 = new THREE.Vector2();
+  for (let k = 0; k < 3; k++) for (const d of [1, -1]) {
+    const sc = S.screw.slice(); sc[k] += d * STEP.screw * 8;
+    const m = computeG(sc, g2).length();
+    if (!best || m < best.m) best = { k, d, m };
+  }
+  return best;
+}
+function readHint(v) {
+  const mm = Math.round(v * 1000), baseMM = Math.floor(mm / 100) * 100, base = baseMM / 1000;
+  const blocks = Math.floor((mm - baseMM) / 5), rem = mm - baseMM - blocks * 5;
+  return `中線位置 = ${base.toFixed(2)}（數字「${String(Math.round(base * 100)).padStart(3, '0')}」下面那條粗線）＋ 往上 ${blocks} 格 × 0.5 cm（= ${blocks * 5} mm）＋ 再估 ${rem} mm ≈ ${v.toFixed(3)}`;
+}
+function goStep(i) {
+  gi = i; gHold = 0; gInput = ''; gMsg = ''; gTries = 0; gShowHint = false;
+  drawFB();
+}
+function nextStep() { gFlash = 0.9; goStep(Math.min(gi + 1, steps.length - 1)); }
+function pressPractice(k) {
+  const st = steps[gi]; if (!st || st.kind !== 'read') return;
+  if (k === 'back') gInput = gInput.slice(0, -1); else if (k === 'clear') gInput = ''; else if (gInput.length < 4) gInput += k;
+  gMsg = ''; drawFB();
+}
+function submitRead() {
+  const st = steps[gi]; if (gInput.length !== 4) { gMsg = '請輸入 4 位數字，例如 1.513 就輸入 1513'; gMsgCol = '#a86a00'; drawFB(); return; }
+  const t = trueRead(st.si, st.pt)[st.w.k], v = val(gInput), e = Math.round((v - t) * 1000);
+  if (Math.abs(e) <= 2) {
+    entries[rowOf(st.si, st.pt)][st.w.c] = gInput;
+    gMsg = `正確！（${e === 0 ? '完全一樣' : `只差 ${Math.abs(e)} mm，在容許範圍內`}）`; gMsgCol = '#2f7d32'; drawFB();
+    setTimeout(() => { if (steps[gi] === st) nextStep(); }, 1100);
+  } else {
+    gTries++;
+    gMsg = `差了 ${Math.abs(e)} mm（你讀得${e > 0 ? '太大' : '太小'}），再看一次。`; gMsgCol = '#c0281e';
+    if (gTries >= 2) gShowHint = true;
+    drawFB();
+  }
+}
+function drawGuide() {
+  const p = fb, st = steps[gi]; p.bg();
+  const n = steps.length;
+  p.rect(0, 0, 1120, 8, '#d5d1c6'); p.rect(0, 0, 1120 * (gi + 1) / n, 8, '#1f5fa8');
+  p.text(`練習模式　${gi + 1} / ${n}`, 1100, 40, 24, '#6b6860', 'right');
+  const T = (t) => p.text(t, 30, 50, 38, '#1f5fa8', 'left', '500');
+  let y = 120; const W = 1060, B = (t, c = '#2b2a27', sz = 30) => { y = p.wrap(t, 30, y, W, sz, c) + 8; };
+  const name = st.pt !== undefined ? NAMES[st.pt] : '';
+  if (st.kind === 'info') {
+    T(st.title); st.body.forEach(t => B('• ' + t));
+    p.btn(30, 860, 1060, 110, '我看懂了，下一步 ▶', nextStep, { fill: '#1f5fa8', color: '#fff', stroke: '#1f5fa8', size: 34 });
+  } else if (st.kind === 'level') {
+    T(`${D.st[st.si].name} 站：把儀器調水平`);
+    B('為什麼？儀器要水平，看出去的視線才會是水平的，讀數才準。');
+    B('看前方的「氣泡放大圖」：白色氣泡要跑進中間的小圓圈。');
+    B('用右邊「操作面板」的彩色 ↺ ↻ 按鈕轉腳螺旋。↻ 會把那一角抬高，氣泡就往那顆螺旋跑。');
+    const tilt = G.length() / MIN, h = levelHint();
+    y += 10;
+    if (G.length() <= LEVEL_OK) B(`目前：已經水平了！保持一下…`, '#2f7d32', 32);
+    else {
+      B(`目前傾斜：約 ${tilt.toFixed(0)} 分（要小於 10）`, '#a86a00', 30);
+      B(`建議：按「${SCREW_NAME[h.k]}色螺旋 ${h.d > 0 ? '↻' : '↺'}」`, SCREW_CSS[h.k], 36);
+      B('（橘色箭頭指著那顆螺旋。按住按鈕可以連續轉，快到時改成一下一下點。）', '#6b6860', 24);
+    }
+    p.btn(800, 905, 290, 70, '跳過這步', nextStep, { size: 24, color: '#6b6860' });
+  } else if (st.kind === 'aim') {
+    T(`把鏡頭轉向 ${name} 尺`);
+    B(ROLE_TEXT[st.role], '#4a4740', 28);
+    B('看紅色虛線（鏡頭方向）和橘色箭頭（目標尺），讓虛線對準那把尺。');
+    B('大幅轉：Quest 按住握把轉動手把，或按面板「大轉」。');
+    B('快對到時：用「微調」或左搖桿輕推，一次只轉一點點。');
+    B('目標：望遠鏡畫面中間的直線，要壓在尺的正中間。');
+    y += 6;
+    B(aimPt === st.pt ? `對到 ${name} 尺了！保持一下…` : aimPt >= 0 ? `現在對到的是 ${NAMES[aimPt]} 尺，不是 ${name}。` : '十字線還沒有壓在尺上。', aimPt === st.pt ? '#2f7d32' : '#a86a00', 30);
+  } else if (st.kind === 'focus') {
+    T(`把 ${name} 尺調清楚（對焦）`);
+    B('望遠鏡畫面如果模糊，就要對焦，跟手機相機點一下對焦是一樣的意思。');
+    B('按面板「看近一點／看遠一點」（或左搖桿上下），直到尺上的數字最清楚。');
+    const d = trueRead(st.si, st.pt).dist;
+    B(`提示：${name} 尺離你大約 ${d.toFixed(0)} 公尺。`, '#6b6860', 26);
+    y += 6;
+    B(blurBias < 0.6 && aimPt === st.pt ? '很清楚了！' : aimPt !== st.pt ? `鏡頭跑掉了，先轉回 ${name} 尺。` : blurBias > 3 ? '還很模糊，繼續調。' : '快清楚了，再調一點點。', blurBias < 0.6 ? '#2f7d32' : '#a86a00', 30);
+  } else if (st.kind === 'read') {
+    T(`讀 ${name} 尺：${st.w.name}`);
+    if (st.w.k === 'mid') {
+      B(`看望遠鏡裡「${st.w.where}」對到尺上的哪個位置。`);
+      if (st.first || gShowHint) {
+        B('尺的讀法：數字 150 代表 1.50 公尺，就是數字下面那條粗線的位置。', '#4a4740', 26);
+        B('從粗線往上數：每一個黑格或白格 = 0.5 公分（5 mm），最後一點點用眼睛估。', '#4a4740', 26);
+      }
+    } else {
+      B(`這次看「${st.w.where}」。讀法跟中線一樣。`);
+      B('上線和下線是用來算距離的：(上線 − 下線) × 100 = 儀器到尺的距離（公尺）。', '#4a4740', 26);
+    }
+    if (gShowHint) B('提示：' + readHint(trueRead(st.si, st.pt)[st.w.k]).replace('中線', st.w.name), '#8a5a00', 26);
+    // 輸入區
+    p.rect(30, 560, 400, 110, '#ffffff', '#1f5fa8', 3);
+    p.text(gInput ? fmt(gInput) + ' m' : '_.___ m', 230, 616, 54, '#111', 'center', '500');
+    p.text('輸入 4 位數，例如 1.513 → 1513', 30, 700, 24, '#6b6860');
+    if (gMsg) p.wrap(gMsg, 30, 750, 420, 28, gMsgCol, 1.4, '500');
+    const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'back'], lab = { clear: '清除', back: '⌫' };
+    keys.forEach((k, i) => p.btn(470 + (i % 3) * 140, 545 + Math.floor(i / 3) * 92, 128, 82, lab[k] || k, () => pressPractice(k), { size: 36 }));
+    p.btn(890, 545, 200, 174, '確認', submitRead, { fill: '#1f5fa8', color: '#fff', stroke: '#1f5fa8', size: 36 });
+    p.btn(890, 729, 200, 174, '給我提示', () => { gShowHint = true; drawFB(); }, { size: 30, color: '#8a5a00', stroke: '#c99a00' });
+  } else if (st.kind === 'move') {
+    T('搬到 Q 站');
+    B('P 站的 A、B、C、D 四把尺都量完了！');
+    B('D 是接力點：搬到 Q 站之後要再量一次 D。因為 D 的高度剛剛已經算得出來，所以可以把高度一路傳到 E、F、G。');
+    B('搬站之後，儀器要重新調水平。');
+    p.btn(30, 860, 1060, 110, '搬到 Q 站 ▶', () => { placeStation(1); nextStep(); }, { fill: '#1f5fa8', color: '#fff', stroke: '#1f5fa8', size: 34 });
+  } else if (st.kind === 'done') {
+    T('完成！來看看高度怎麼算出來');
+    const mids = entries.map(e => val(e[1]));
+    if (mids.some(v => v == null)) B('有幾格沒有讀，無法計算。', '#a86a00');
+    else {
+      const h = heightsFrom(mids), f = v => v.toFixed(3);
+      B(`① P 站視線有多高 = A 的高度 ${f(D.HA)} ＋ A 尺中線 ${f(mids[0])} = ${f(h.hiP)}`, '#2b2a27', 26);
+      B(`② 其他點的高度 = 視線高度 − 該點中線：B = ${f(h.raw[1])}、C = ${f(h.raw[2])}、D = ${f(h.HD)}`, '#2b2a27', 26);
+      B(`③ Q 站視線有多高 = D 的高度 ${f(h.HD)} ＋ D 尺中線（Q 站讀）${f(mids[4])} = ${f(h.hiQ)}`, '#2b2a27', 26);
+      B(`④ E = ${f(h.raw[4])}、F = ${f(h.raw[5])}、G 算出來 = ${f(h.HGc)}`, '#2b2a27', 26);
+      B(`⑤ 題目給的 G = ${f(D.HG)}，兩者差 ${(h.w * 1000).toFixed(0)} mm。這個差叫「閉合差」，越小代表量得越準；考試時要把它平均分攤回各點。`, '#1f5fa8', 26);
+      B('讀數越大，代表那個點越低（尺露出來越多）。', '#6b6860', 24);
+    }
+    p.btn(30, 880, 340, 95, '再練一次', () => startMode('practice'), { size: 30 });
+    p.btn(390, 880, 360, 95, '挑戰實戰模式', () => startMode('exam'), { fill: '#1f5fa8', color: '#fff', stroke: '#1f5fa8', size: 30 });
+    p.btn(770, 880, 320, 95, '回選單', () => startMode('menu'), { size: 30 });
+  }
+  if (gFlash > 0 && st.kind !== 'read') p.text('✓ 上一步完成', 560, 48, 30, '#2f7d32', 'center', '500');
+}
+const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.4, 1, 16), new THREE.MeshBasicMaterial({ color: 0xff8a1c, depthTest: false }));
+arrow.rotation.x = Math.PI; arrow.renderOrder = 30; arrow.layers.set(UI); scene.add(arrow);
+const camPos = new V3(), tmpV = new V3();
+function guideTick(dt) {
+  if (gFlash > 0) { gFlash -= dt; }
+  arrow.visible = false;
+  if (MODE !== 'practice') return;
+  const st = steps[gi]; if (!st) return;
+  camera.getWorldPosition(camPos);
+  const bob = Math.sin(performance.now() / 250) * 0.15;
+  if (st.kind === 'level') {
+    const h = levelHint(); screwMeshes[h.k].getWorldPosition(tmpV);
+    const s = 0.035; arrow.scale.setScalar(s); arrow.position.set(tmpV.x, tmpV.y + 0.06 + bob * s, tmpV.z); arrow.visible = G.length() > LEVEL_OK;
+    gHold = G.length() <= LEVEL_OK ? gHold + dt : 0;
+    if (gHold > 0.8) nextStep();
+  } else if (st.pt !== undefined) {
+    const top = D.tops[st.pt], d = camPos.distanceTo(tmpV.set(SX[st.pt], top + 3, 0)), s = Math.max(0.1, d * 0.03);
+    arrow.scale.setScalar(s); arrow.position.set(SX[st.pt], top + 3.05 + s * 0.5 + bob * s, 0); arrow.visible = true;
+    if (st.kind === 'aim') { gHold = aimPt === st.pt ? gHold + dt : 0; if (gHold > 0.5) nextStep(); }
+    if (st.kind === 'focus') { gHold = aimPt === st.pt && blurBias < 0.6 ? gHold + dt : 0; if (gHold > 0.4) nextStep(); }
+  }
+}
+let gRedraw = 0;
+
+// ═════════════ 模式切換 ═════════════
+function startMode(m) {
+  MODE = m;
+  D = genData(); buildGround(); buildStakes(); resetBook(); placeStation(0);
+  if (m === 'practice') { steps = buildSteps(); goStep(0); }
+  const show = m === 'practice';
+  practiceOnly.forEach(o => o.visible = show); roleLabels.forEach(o => o.visible = show);
+  ctl.mesh.visible = telPanel.visible = bub.mesh.visible = m !== 'menu';
+  if (m === 'menu') { fb.mesh.position.set(0, 1.45, -0.95); fb.mesh.rotation.set(-0.1, 0, 0); }   // 選單放正前方
+  else { fb.mesh.position.set(-0.64, 1.32, -0.72); fb.mesh.rotation.set(-0.25, 0.62, 0, 'YXZ'); }
+  drawCtl(); drawFB();
+}
+
+// ═════════════ 每幀：儀器、對焦、望遠鏡 ═════════════
 const aimRay = new THREE.Raycaster(); const fwd = new V3();
 const yawQ = new THREE.Quaternion(), tiltQ = new THREE.Quaternion();
 function updateInstrument() {
@@ -490,12 +787,11 @@ function updateInstrument() {
   const s = D.st[S.si];
   telCam.position.set(s.x, s.gy + s.ih, s.z);
   yawQ.setFromAxisAngle(UP, S.yaw);
-  if (G.length() > COMP_RANGE) {                      // 超出補償範圍：視線跟著基座歪
+  if (G.length() > COMP_RANGE) {
     tiltQ.setFromUnitVectors(UP, new V3(-G.x, 1, -G.y).normalize());
     telCam.quaternion.copy(tiltQ).multiply(yawQ);
   } else telCam.quaternion.copy(yawQ);
   telCam.updateMatrixWorld();
-  // 十字絲中心照到什麼？
   fwd.set(0, 0, -1).applyQuaternion(telCam.quaternion);
   aimRay.set(telCam.position, fwd); aimRay.far = 600;
   const hits = aimRay.intersectObjects([...staffs, groundMesh], true);
@@ -505,9 +801,17 @@ function updateInstrument() {
     let o = hits[0].object; while (o && o.userData.pt === undefined) o = o.parent;
     if (o) aimPt = o.userData.pt;
   }
-  const f = Math.exp(S.lf);
-  blurBias = Math.min(7, Math.max(0, Math.abs(Math.log(f / dist)) - 0.04) * 11);
+  blurBias = Math.min(7, Math.max(0, Math.abs(Math.log(Math.exp(S.lf) / dist)) - 0.04) * 11);
   telMat.uniforms.bias.value = blurBias;
+  // 尺上方的名稱標籤：遠近都保持看得清楚的大小
+  if (MODE === 'practice') {
+    camera.getWorldPosition(camPos);
+    for (const rl of roleLabels) {
+      const d = camPos.distanceTo(rl.position), h = Math.max(0.15, d * 0.028);
+      rl.scale.set(h * rl.material.map.image.width / rl.material.map.image.height, h, 1);
+      rl.position.y = rl.userData.base + 3.25 + d * 0.06;
+    }
+  }
 }
 function renderTelescope() {
   const xrOn = renderer.xr.enabled, cur = renderer.getRenderTarget();
@@ -517,100 +821,113 @@ function renderTelescope() {
   renderer.xr.enabled = xrOn;
 }
 
-// ───────────── 輸入：電腦 ─────────────
-const keys = new Set();
-addEventListener('keydown', e => {
-  if (e.repeat && !'wasdqeWASDQE'.includes(e.key)) return;
-  keys.add(e.code);
-  const dm = /^(Digit|Numpad)([0-9])$/.exec(e.code);
-  if (dm) press(dm[2]);
-  if (e.code === 'Backspace') press('back');
-  if (e.code === 'Enter') { nextCell(); drawFB(); }
-});
-addEventListener('keyup', e => keys.delete(e.code));
-addEventListener('keydown', e => {          // 選腳螺旋：Z / X / C
-  const m = { KeyZ: 0, KeyX: 1, KeyC: 2 }[e.code];
-  if (m !== undefined) { S.sel = S.sel === m ? -1 : m; drawCtl(); }
-});
-let look = { yaw: 0, pitch: -0.32 }, drag = null;
-const ray = new THREE.Raycaster(); ray.layers.set(UI);
-const clickables = () => [fb.mesh, ctl.mesh, ...screwMeshes];
-function handleHit(h) {
-  if (!h) return;
-  if (h.object.userData.panel) h.object.userData.panel.hit(h.uv);
-  else if (h.object.userData.screw !== undefined) { const k = h.object.userData.screw; S.sel = S.sel === k ? -1 : k; drawCtl(); }
+// ═════════════ 按鈕按住連續 ═════════════
+let held = null;
+function startPress(r) { r.fn(); if (r.rep) held = { fn: r.fn, t: 0, acc: 0 }; refresh(); }
+function endPress() { held = null; }
+function refresh() { if (MODE !== 'menu') drawCtl(); }
+function holdTick(dt) {
+  if (!held) return;
+  held.t += dt;
+  if (held.t > 0.4) { held.acc += dt; while (held.acc > 0.05) { held.acc -= 0.05; held.fn(); } }
 }
-renderer.domElement.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY }; });
+
+// ═════════════ 輸入：電腦 ═════════════
+const press = k => MODE === 'practice' ? pressPractice(k) : MODE === 'exam' ? pressExam(k) : null;
+addEventListener('keydown', e => {
+  const dm = /^(Digit|Numpad)([0-9])$/.exec(e.code);
+  if (dm && !e.repeat) press(dm[2]);
+  if (e.code === 'Backspace') press('back');
+  if (e.code === 'Enter') { if (MODE === 'practice' && steps[gi] && steps[gi].kind === 'read') submitRead(); else if (MODE === 'exam') { nextCell(); drawFB(); } }
+  const big = e.shiftKey;
+  if (e.code === 'KeyA') turnYaw(big ? STEP.yawBig : STEP.yawFine);
+  if (e.code === 'KeyD') turnYaw(-(big ? STEP.yawBig : STEP.yawFine));
+  if (e.code === 'KeyW') focusStep(1);
+  if (e.code === 'KeyS') focusStep(-1);
+});
+let look = { yaw: 0, pitch: -0.3 }, drag = null;
+const ray = new THREE.Raycaster(); ray.layers.set(UI);
+const clickables = () => [fb.mesh, ...(ctl.mesh.visible ? [ctl.mesh] : []), ...screwMeshes];
+function pressHit(h) {
+  if (!h) return false;
+  if (h.object.userData.panel) { const r = h.object.userData.panel.find(h.uv); if (r) startPress(r); return true; }
+  if (h.object.userData.screw !== undefined) { S.sel = h.object.userData.screw; refresh(); return true; }
+  return false;
+}
+renderer.domElement.addEventListener('pointerdown', e => {
+  const ndc = new THREE.Vector2(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  if (pressHit(ray.intersectObjects(clickables(), false)[0])) return;
+  drag = { x: e.clientX, y: e.clientY };
+});
 addEventListener('pointermove', e => {
   if (!drag) return;
   look.yaw += (e.clientX - drag.x) * 0.004; look.pitch += (e.clientY - drag.y) * 0.004;
   look.pitch = THREE.MathUtils.clamp(look.pitch, -1.4, 1.4); drag.x = e.clientX; drag.y = e.clientY;
 });
-addEventListener('pointerup', e => {
-  if (drag && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 5) {
-    const ndc = new THREE.Vector2(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
-    ray.setFromCamera(ndc, camera); handleHit(ray.intersectObjects(clickables(), false)[0]);
-  }
-  drag = null;
-});
+addEventListener('pointerup', () => { drag = null; endPress(); });
 renderer.domElement.addEventListener('wheel', e => { camera.fov = THREE.MathUtils.clamp(camera.fov + e.deltaY * 0.03, 15, 80); camera.updateProjectionMatrix(); }, { passive: true });
 addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+const hud = document.getElementById('hud'), hudToggle = document.getElementById('hudToggle');
 document.getElementById('hideHud').onclick = () => { hud.style.display = 'none'; hudToggle.style.display = 'block'; };
 hudToggle.onclick = () => { hud.style.display = 'block'; hudToggle.style.display = 'none'; };
+document.getElementById('mPractice').onclick = () => startMode('practice');
+document.getElementById('mExam').onclick = () => startMode('exam');
 
-// ───────────── 輸入：Quest 手把 ─────────────
+// ═════════════ 輸入：Quest 手把 ═════════════
 const tmpM = new THREE.Matrix4();
 const rayGeo = new THREE.BufferGeometry().setFromPoints([new V3(), new V3(0, 0, -1)]);
+function ctrlRay(c) { tmpM.identity().extractRotation(c.matrixWorld); ray.ray.origin.setFromMatrixPosition(c.matrixWorld); ray.ray.direction.set(0, 0, -1).applyMatrix4(tmpM); }
+function heading(c) { tmpM.identity().extractRotation(c.matrixWorld); const f = new V3(0, 0, -1).applyMatrix4(tmpM); return Math.atan2(-f.x, -f.z); }
 const ctrls = [0, 1].map(i => {
   const c = renderer.xr.getController(i); rig.add(c);
   const line = new THREE.Line(rayGeo, new THREE.LineBasicMaterial({ color: 0xd9480f })); line.scale.z = 3; c.add(line);
-  const tip = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.09), new THREE.MeshLambertMaterial({ color: 0x333333 })); tip.position.z = 0.03; c.add(tip);
+  c.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.09), new THREE.MeshLambertMaterial({ color: 0x333333 })), 0, 0, 0.03));
   setLayer(c, UI); c.visible = false;
   c.addEventListener('connected', e => { c.userData.src = e.data; c.visible = true; });
   c.addEventListener('disconnected', () => { c.userData.src = null; c.visible = false; });
-  c.addEventListener('select', () => {
-    tmpM.identity().extractRotation(c.matrixWorld);
-    ray.ray.origin.setFromMatrixPosition(c.matrixWorld); ray.ray.direction.set(0, 0, -1).applyMatrix4(tmpM);
-    handleHit(ray.intersectObjects(clickables(), false)[0]);
-  });
+  c.addEventListener('selectstart', () => { ctrlRay(c); pressHit(ray.intersectObjects(clickables(), false)[0]); });
+  c.addEventListener('selectend', endPress);
+  c.addEventListener('squeezestart', () => { c.userData.grab = heading(c); });
+  c.addEventListener('squeezeend', () => { c.userData.grab = null; });
   return c;
 });
-const dz = v => Math.abs(v) < 0.08 ? 0 : v;
+const sticks = {};
+function stickStep(key, v, pos, neg, dt) {
+  const s = sticks[key] || (sticks[key] = { on: 0, t: 0, acc: 0 });
+  const dir = v > 0.55 ? 1 : v < -0.55 ? -1 : 0;
+  if (Math.abs(v) < 0.3) s.on = 0;
+  if (!dir) return;
+  if (s.on !== dir) { s.on = dir; s.t = 0; s.acc = 0; (dir > 0 ? pos : neg)(); return; }
+  s.t += dt;
+  if (s.t > 0.4) { s.acc += dt; while (s.acc > 0.05) { s.acc -= 0.05; (dir > 0 ? pos : neg)(); } }
+}
 function xrInput(dt) {
   const s = renderer.xr.getSession(); if (!s) return;
   for (const src of s.inputSources) {
     const gp = src.gamepad; if (!gp || gp.axes.length < 4) continue;
-    const ax = dz(gp.axes[2]), ay = dz(gp.axes[3]);
+    const ax = gp.axes[2], ay = gp.axes[3];
     if (src.handedness === 'left') {
-      const fast = gp.buttons[1] && gp.buttons[1].pressed;
-      S.yaw -= ax * Math.abs(ax) * (fast ? 1.2 : 0.12) * dt;
-      S.lf = THREE.MathUtils.clamp(S.lf - ay * 0.9 * dt, Math.log(1.5), Math.log(150));
-    } else if (src.handedness === 'right' && S.sel >= 0 && ax) {
-      turnScrew(ax * Math.abs(ax) * 0.0015 * dt);
+      stickStep('lx', ax, () => turnYaw(-STEP.yawFine), () => turnYaw(STEP.yawFine), dt);
+      stickStep('ly', ay, () => focusStep(-1), () => focusStep(1), dt);
+    } else if (src.handedness === 'right') {
+      stickStep('rx', ax, () => turnScrew(S.sel, 1), () => turnScrew(S.sel, -1), dt);
     }
   }
-  for (const c of ctrls) {          // 射線長度：打到面板就停在那裡
-    tmpM.identity().extractRotation(c.matrixWorld);
-    ray.ray.origin.setFromMatrixPosition(c.matrixWorld); ray.ray.direction.set(0, 0, -1).applyMatrix4(tmpM);
-    const h = ray.intersectObjects(clickables(), false)[0];
-    c.children[0].scale.z = h ? h.distance : 3;
+  for (const c of ctrls) {
+    if (c.userData.grab != null) {            // 握把：手轉多少，鏡頭就轉多少
+      const h = heading(c); let d = h - c.userData.grab;
+      if (d > Math.PI) d -= 2 * Math.PI; if (d < -Math.PI) d += 2 * Math.PI;
+      S.yaw += d; c.userData.grab = h;
+    }
+    ctrlRay(c);
+    const hit = ray.intersectObjects(clickables(), false)[0];
+    c.children[0].scale.z = hit ? hit.distance : 3;
   }
 }
-function turnScrew(dh) { const k = S.sel; S.screw[k] = THREE.MathUtils.clamp(S.screw[k] + dh, -0.01, 0.01); updateTilt(); }
-function deskInput(dt) {
-  const fast = keys.has('ShiftLeft') || keys.has('ShiftRight');
-  if (keys.has('KeyA')) S.yaw += (fast ? 0.7 : 0.06) * dt;
-  if (keys.has('KeyD')) S.yaw -= (fast ? 0.7 : 0.06) * dt;
-  if (keys.has('KeyW')) S.lf = Math.min(Math.log(150), S.lf + 0.7 * dt);
-  if (keys.has('KeyS')) S.lf = Math.max(Math.log(1.5), S.lf - 0.7 * dt);
-  if (S.sel >= 0) {
-    if (keys.has('KeyQ')) turnScrew(-(fast ? 0.0015 : 0.0005) * dt);
-    if (keys.has('KeyE')) turnScrew((fast ? 0.0015 : 0.0005) * dt);
-  }
-  if (!renderer.xr.isPresenting) { camera.rotation.y = look.yaw; camera.rotation.x = look.pitch; }
-}
+function deskInput() { if (!renderer.xr.isPresenting) { camera.rotation.y = look.yaw; camera.rotation.x = look.pitch; } }
 
-// ───────────── 進入 VR ─────────────
+// ═════════════ 進入 VR ═════════════
 const xrBtn = document.getElementById('xr');
 if (navigator.xr) {
   navigator.xr.isSessionSupported('immersive-vr').then(ok => {
@@ -624,15 +941,22 @@ xrBtn.onclick = async () => {
   s.addEventListener('end', () => { xrBtn.textContent = '進入 VR'; });
 };
 
-// ───────────── 啟動 ─────────────
-setLayer(stationUI, UI);      // 面板只給玩家看，不會擋住望遠鏡
-placeStation(0); drawCtl(); drawFB();
-window.dbg = { S, D: () => D, G, entries: () => entries, trueRead, press, placeStation, look, camera, telCam, renderer, rt, scene, st: () => ({ aimPt, blurBias }) };
+// ═════════════ 啟動 ═════════════
+setLayer(stationUI, UI);
+// 面板永遠畫在標籤和虛線上面（不被擋住）
+for (const m of [fb.mesh, ctl.mesh, bub.mesh, telPanel]) {
+  m.renderOrder = 50; m.material.transparent = true; m.material.depthTest = false;
+  m.children.forEach((c, i) => { c.renderOrder = 51 + i; if (c.material) c.material.depthTest = false; });
+}
+startMode('menu');
+window.dbg = { S, D: () => D, G, entries: () => entries, trueRead, press, placeStation, look, camera, telCam, renderer, rt, startMode, steps: () => steps, gi: () => gi, goStep, submitRead, st: () => ({ aimPt, blurBias, MODE }) };
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.05);
-  deskInput(dt); xrInput(dt);
-  updateInstrument(); drawBubble(); renderTelescope();
+  deskInput(); xrInput(dt); holdTick(dt);
+  updateInstrument(); guideTick(dt);
+  if (MODE === 'practice' && (gRedraw -= dt) < 0) { gRedraw = 0.25; const k = steps[gi] && steps[gi].kind; if (k === 'level' || k === 'aim' || k === 'focus') drawFB(); }
+  drawBubble(); renderTelescope();
   renderer.render(scene, camera);
 });
 </script>
