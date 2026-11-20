@@ -27,7 +27,8 @@
   拖曳滑鼠：看四周　滾輪：放大縮小<br>
   點面板上的按鈕：<b>點一下 = 轉一小格，按住 = 連續轉</b><br>
   <kbd>A</kbd><kbd>D</kbd> 鏡頭左右微調（加 <kbd>Shift</kbd> 大轉）<br>
-  <kbd>W</kbd><kbd>S</kbd> 對焦遠／近　數字鍵：輸入讀數</p>
+  <kbd>W</kbd><kbd>S</kbd> 對焦遠／近　數字鍵：輸入讀數<br>
+  <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> 在場地裡走動（加 <kbd>Shift</kbd> 跑步）。走遠了，畫面下方會出現「回到測站」按鈕</p>
   <p><button id="hideHud">收起說明</button></p>
 </div>
 <button id="hudToggle">說明</button>
@@ -59,6 +60,7 @@ const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.02, 8
 camera.layers.enable(UI);
 camera.rotation.order = 'YXZ';
 const rig = new THREE.Group(); scene.add(rig); rig.add(camera); camera.position.set(0, 1.6, 0);
+const stationUI = new THREE.Group(); scene.add(stationUI);   // 測站旁的面板（固定在地上）
 
 const V3 = THREE.Vector3, UP = new V3(0, 1, 0);
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -157,15 +159,22 @@ function makeSprite(text, h, color, bg) {
   s.scale.set(h * aspect, h, 1); s.renderOrder = 20; s.userData.aspect = aspect;
   return s;
 }
-function addLabel(parent, text, anchor, pos, color = '#1f5fa8') {
+// 部位標籤：只顯示「這一步用得到」的，避免互相重疊；大小隨距離自動調整
+const labels = [];
+let labelAll = false;
+// anchor：零件上的點（parent 座標）；off：標籤要擺在「你看過去」的右/上多遠（公尺，0.65 m 距離時）
+// 每幀依照你站的位置重新排，所以不管鏡頭轉到哪個方向，標籤都在固定的上下左右，不會互相疊在一起
+function addLabel(key, parent, text, anchor, off, color = '#1f5fa8') {
   const g = new THREE.Group();
-  const s = makeSprite(text, 0.03, color); s.position.copy(pos);
-  const ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints([anchor, pos]), new THREE.LineBasicMaterial({ color, depthTest: false }));
-  ln.renderOrder = 19;
+  const s = makeSprite(text, 0.03, color);
+  const ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new V3(), new V3()]), new THREE.LineBasicMaterial({ color, depthTest: false }));
+  ln.renderOrder = 19; ln.frustumCulled = false;
   const dot = new THREE.Mesh(new THREE.SphereGeometry(0.004, 8, 6), new THREE.MeshBasicMaterial({ color, depthTest: false }));
-  dot.position.copy(anchor); dot.renderOrder = 19;
-  g.add(ln, s, dot); parent.add(g); setLayer(g, UI); practiceOnly.push(g);
-  return g;
+  dot.renderOrder = 19;
+  g.add(ln, s, dot); scene.add(g); setLayer(g, UI); g.visible = false;
+  const L = { key, g, s, ln, dot, parent, anchor, off };
+  labels.push(L);
+  return L;
 }
 
 // ═════════════ 水準尺（5 mm 式，自繪） ═════════════
@@ -263,12 +272,13 @@ let sightLine;
 }
 setLayer(inst, UI);
 // 儀器標籤（練習模式）
-addLabel(upper, '鏡頭（前面，從這裡看出去）', new V3(0, 0, -0.15), new V3(0, 0.13, -0.24), '#c0281e');
-addLabel(upper, '目鏡（後面，眼睛靠這裡）', new V3(0, 0, 0.14), new V3(-0.05, 0.12, 0.2));
-addLabel(upper, '對焦旋鈕', new V3(0.058, 0.01, -0.02), new V3(0.2, 0.07, -0.05));
-addLabel(tilted, '氣泡：要在小圈圈中間', new V3(0, 0.064, 0.035), new V3(-0.2, 0.11, 0.12));
-addLabel(tilted, '腳螺旋（紅綠藍三顆，用來調水平）', new V3(SCREW_R * Math.cos(SCREW_A[2]), 0.03, SCREW_R * Math.sin(SCREW_A[2])), new V3(0.22, -0.03, 0.12));
-const legLabel = addLabel(inst, '腳架', new V3(0.25, 0.7, 0.15), new V3(0.4, 0.8, 0.25), '#6b4a2b');
+// 標籤往不同方向拉開：鏡頭往上、目鏡往左上、對焦往右、氣泡往左下、螺旋往右下、腳架往右更下面
+addLabel('lens', upper, '鏡頭（前面，從這裡看出去）', new V3(0, 0, -0.15), [0, 0.12], '#c0281e');
+addLabel('eye', upper, '目鏡（後面，眼睛靠這裡）', new V3(0, 0, 0.14), [-0.08, 0.06]);
+addLabel('focus', upper, '對焦旋鈕', new V3(0.058, 0.01, -0.02), [0.12, 0.04]);
+addLabel('bubble', tilted, '氣泡：要在小圈圈中間', new V3(0, 0.064, 0.035), [-0.1, -0.07]);
+addLabel('screw', tilted, '腳螺旋（紅綠藍三顆，用來調水平）', new V3(SCREW_R * Math.cos(SCREW_A[2]), 0.03, SCREW_R * Math.sin(SCREW_A[2])), [0.12, -0.1]);
+const legLabel = addLabel('leg', inst, '腳架', new V3(0, 0.7, 0), [0.1, 0.06], '#6b4a2b');
 
 // ═════════════ 儀器狀態 ═════════════
 const COMP_RANGE = 15 * MIN, LEVEL_OK = 10 * MIN;
@@ -305,7 +315,7 @@ function placeStation(si, fresh = true) {
   legs.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.03, 24), legM), 0, hh - 0.015, 0));
   setLayer(legs, UI);
   tilted.position.y = hh;
-  legLabel.position.y = hh - 1.2;
+  { const a = SCREW_A[2] + Math.PI / 3; legLabel.anchor.set(0.2 * Math.cos(a), hh * 0.62, 0.2 * Math.sin(a)); }   // 指到一支腳的中段
   if (fresh) {
     const mag = rnd(0.4, 1.0) * DEG, dir = rnd(0, Math.PI * 2);
     S.tripod.set(Math.cos(dir) * mag, Math.sin(dir) * mag);
@@ -313,7 +323,8 @@ function placeStation(si, fresh = true) {
     S.yaw = rnd(-0.5, 0.5); S.lf = Math.log(rnd(2, 4)); S.sel = 0;
   }
   for (const st of staffs) st.lookAt(s.x, st.position.y, s.z);
-  rig.position.set(s.x, s.gy, s.z + 0.6);
+  stationUI.position.set(s.x, s.gy, s.z + 0.6);   // 面板固定在測站，不跟著人走
+  returnHome();
   updateTilt();
 }
 
@@ -330,10 +341,9 @@ const telMat = new THREE.ShaderMaterial({
       #include <colorspace_fragment>
     }`
 });
-const stationUI = new THREE.Group(); rig.add(stationUI);
 const TEL_R = 0.26;
 const telPanel = new THREE.Mesh(new THREE.CircleGeometry(TEL_R, 64), telMat);
-telPanel.position.set(0.36, 1.74, -1.05); telPanel.rotation.y = -0.25;
+telPanel.position.set(0.44, 1.86, -1.0); telPanel.rotation.y = -0.35;   // 放在儀器右上方，不擋標籤
 stationUI.add(telPanel);
 let wireLabels;
 {
@@ -394,7 +404,7 @@ class Panel {
 
 // 氣泡放大圖
 const bub = new Panel(0.17, 0.17, 256, 256);
-bub.mesh.position.set(-0.08, 1.6, -1.0); bub.mesh.rotation.y = 0.1; stationUI.add(bub.mesh);
+bub.mesh.position.set(-0.13, 1.9, -1.05); bub.mesh.rotation.y = 0.12; stationUI.add(bub.mesh);   // 儀器正上方偏左，不擋儀器
 function drawBubble() {
   const x = bub.x, R = 128, sc = 100 / (0.6 * DEG);
   x.fillStyle = '#20262c'; x.fillRect(0, 0, 256, 256);
@@ -415,7 +425,8 @@ ctl.mesh.position.set(0.98, 1.3, -0.62); ctl.mesh.rotation.set(-0.3, -0.85, 0, '
 function drawCtl() {
   const p = ctl; p.bg('#f7f5ef');
   p.text('操作面板', 24, 36, 34, '#2b2a27', 'left', '500');
-  p.text('點一下 = 轉一小格　按住 = 連續轉', 1076, 36, 26, '#8a5a00', 'right', '500');
+  p.text('點一下 = 一小格　按住 = 連續', 200, 37, 24, '#8a5a00', 'left', '500');
+  if (MODE === 'practice') p.btn(640, 8, 436, 58, labelAll ? '標籤：全部顯示（點我切換）' : '標籤：只顯示這步（點我切換）', () => { labelAll = !labelAll; }, { size: 23, fill: labelAll ? '#fff8e0' : '#ffffff' });
   p.text('轉鏡頭', 24, 120, 30, '#2b2a27', 'left', '500');
   p.btn(150, 78, 215, 86, '◀◀ 大轉', () => turnYaw(STEP.yawBig), { rep: true });
   p.btn(375, 78, 215, 86, '◀ 微調', () => turnYaw(STEP.yawFine), { rep: true, fill: '#eef3fa' });
@@ -437,8 +448,8 @@ function drawCtl() {
   p.text('Quest 手把：', 24, 540, 26, '#2b2a27', 'left', '500');
   p.text('按住握把（中指按鈕）再轉動手把 = 像用手推儀器一樣大幅轉向', 24, 582, 25, '#4a4740');
   p.text('左搖桿 輕推左右 = 微調一格（推住不放 = 連續）　上下 = 對焦', 24, 622, 25, '#4a4740');
-  p.text('右搖桿 左右 = 轉最後選的腳螺旋　板機 = 點按鈕', 24, 662, 25, '#4a4740');
-  p.text('電腦：A/D 微調（Shift 大轉）、W/S 對焦、數字鍵輸入讀數', 24, 702, 25, '#4a4740');
+  p.text('右搖桿 往前推 = 瞄準地面、放開就瞬移過去　左右 = 轉身 30°　板機 = 點按鈕', 24, 662, 25, '#4a4740');
+  p.text('電腦：A/D 微調、W/S 對焦、方向鍵 走路、數字鍵輸入讀數', 24, 702, 25, '#4a4740');
   p.update();
 }
 
@@ -775,7 +786,7 @@ function startMode(m) {
   practiceOnly.forEach(o => o.visible = show); roleLabels.forEach(o => o.visible = show);
   ctl.mesh.visible = telPanel.visible = bub.mesh.visible = m !== 'menu';
   if (m === 'menu') { fb.mesh.position.set(0, 1.45, -0.95); fb.mesh.rotation.set(-0.1, 0, 0); }   // 選單放正前方
-  else { fb.mesh.position.set(-0.64, 1.32, -0.72); fb.mesh.rotation.set(-0.25, 0.62, 0, 'YXZ'); }
+  else { fb.mesh.position.set(-0.74, 1.32, -0.64); fb.mesh.rotation.set(-0.25, 0.68, 0, 'YXZ'); }   // 往左挪，讓出儀器周圍給標籤
   drawCtl(); drawFB();
 }
 
@@ -847,7 +858,7 @@ addEventListener('keydown', e => {
 });
 let look = { yaw: 0, pitch: -0.3 }, drag = null;
 const ray = new THREE.Raycaster(); ray.layers.set(UI);
-const clickables = () => [fb.mesh, ...(ctl.mesh.visible ? [ctl.mesh] : []), ...screwMeshes];
+const clickables = () => [...(homeBtn.mesh.visible ? [homeBtn.mesh] : []), fb.mesh, ...(ctl.mesh.visible ? [ctl.mesh] : []), ...screwMeshes];
 function pressHit(h) {
   if (!h) return false;
   if (h.object.userData.panel) { const r = h.object.userData.panel.find(h.uv); if (r) startPress(r); return true; }
@@ -911,9 +922,17 @@ function xrInput(dt) {
       stickStep('lx', ax, () => turnYaw(-STEP.yawFine), () => turnYaw(STEP.yawFine), dt);
       stickStep('ly', ay, () => focusStep(-1), () => focusStep(1), dt);
     } else if (src.handedness === 'right') {
-      stickStep('rx', ax, () => turnScrew(S.sel, 1), () => turnScrew(S.sel, -1), dt);
+      const c = ctrls.find(k => k.userData.src === src);
+      if (ay < -0.6 && c) tele.ctrl = c;                         // 往前推：開始瞄準瞬移
+      if (tele.ctrl && Math.abs(ay) < 0.3) { if (tele.ok) teleportTo(tele.p.x, tele.p.z); tele.ctrl = null; }
+      // 左右：轉身 30°（推一次轉一次，要回中才能再轉）
+      if (!tele.ctrl && Math.abs(ay) < 0.5) {
+        if (Math.abs(ax) > 0.7 && !tele.snapped) { snapTurn(ax > 0 ? -1 : 1); tele.snapped = true; }
+        if (Math.abs(ax) < 0.3) tele.snapped = false;
+      }
     }
   }
+  updateTeleportArc();
   for (const c of ctrls) {
     if (c.userData.grab != null) {            // 握把：手轉多少，鏡頭就轉多少
       const h = heading(c); let d = h - c.userData.grab;
@@ -925,7 +944,113 @@ function xrInput(dt) {
     c.children[0].scale.z = hit ? hit.distance : 3;
   }
 }
-function deskInput() { if (!renderer.xr.isPresenting) { camera.rotation.y = look.yaw; camera.rotation.x = look.pitch; } }
+function deskInput(dt) {
+  if (renderer.xr.isPresenting) return;
+  camera.rotation.y = look.yaw; camera.rotation.x = look.pitch;
+  const f = (keys.ArrowUp ? 1 : 0) - (keys.ArrowDown ? 1 : 0), r = (keys.ArrowRight ? 1 : 0) - (keys.ArrowLeft ? 1 : 0);
+  if (f || r) {
+    const sp = (keys.shift ? 7 : 2.5) * dt, a = look.yaw + rig.rotation.y;
+    const nx = rig.position.x + (-Math.sin(a) * f + Math.cos(a) * r) * sp, nz = rig.position.z + (-Math.cos(a) * f - Math.sin(a) * r) * sp;
+    if (inBounds(nx, nz)) { rig.position.x = nx; rig.position.z = nz; rig.position.y = groundAt(nx); }
+  }
+}
+
+// ═════════════ 在場地裡移動、回到測站 ═════════════
+const keys = {};
+addEventListener('keydown', e => { keys[e.code] = true; keys.shift = e.shiftKey; if (e.code.startsWith('Arrow')) e.preventDefault(); });
+addEventListener('keyup', e => { keys[e.code] = false; keys.shift = e.shiftKey; });
+addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+const inBounds = (x, z) => x > -60 && x < 180 && Math.abs(z) < 60;
+const hv = new V3(), hv2 = new V3(), hd = new V3();
+function headWorld(v) { rig.updateMatrixWorld(true); return v.setFromMatrixPosition(camera.matrixWorld); }
+function headYaw() { rig.updateMatrixWorld(true); camera.getWorldDirection(hd); return Math.atan2(-hd.x, -hd.z); }
+function moveHeadTo(x, z) { headWorld(hv); rig.position.x += x - hv.x; rig.position.z += z - hv.z; rig.position.y = groundAt(x); }
+function snapTurn(dir) {                       // 繞著頭轉，人不會被甩出去
+  headWorld(hv); rig.rotation.y += dir * 30 * DEG; headWorld(hv2);
+  rig.position.x += hv.x - hv2.x; rig.position.z += hv.z - hv2.z;
+}
+function teleportTo(x, z) { moveHeadTo(x, z); }
+function homePos() { const s = D.st[S.si]; return { x: s.x, z: s.z + 0.6 }; }
+function returnHome() {
+  const h = homePos();
+  if (renderer.xr.isPresenting) {              // 轉回面向儀器，再把頭放回測站位置
+    rig.rotation.y -= headYaw(); moveHeadTo(h.x, h.z);
+  } else {
+    rig.rotation.y = 0; rig.position.set(h.x, groundAt(h.x), h.z);
+    look.yaw = 0; look.pitch = -0.3;
+  }
+}
+// 瞬移瞄準線（拋物線＋落點圓圈）
+const tele = { ctrl: null, ok: false, p: new V3(), snapped: false };
+const ARC_N = 48;
+const arcLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(Array.from({ length: ARC_N }, () => new V3())), new THREE.LineBasicMaterial({ color: 0x4dabf7 }));
+arcLine.frustumCulled = false;
+const marker = new THREE.Mesh(new THREE.RingGeometry(0.22, 0.3, 32), new THREE.MeshBasicMaterial({ color: 0x4dabf7, side: THREE.DoubleSide }));
+marker.rotation.x = -Math.PI / 2;
+scene.add(arcLine, marker); arcLine.layers.set(UI); marker.layers.set(UI); arcLine.visible = marker.visible = false;
+function updateTeleportArc() {
+  const c = tele.ctrl; arcLine.visible = marker.visible = !!c; tele.ok = false;
+  if (!c) return;
+  const p0 = new V3().setFromMatrixPosition(c.matrixWorld);
+  tmpM.identity().extractRotation(c.matrixWorld);
+  const v = new V3(0, 0, -1).applyMatrix4(tmpM).multiplyScalar(10);
+  const pos = arcLine.geometry.attributes.position, p = new V3();
+  let hit = -1;
+  for (let i = 0; i < ARC_N; i++) {
+    const t = i * 0.04;
+    if (hit < 0) { p.set(p0.x + v.x * t, p0.y + v.y * t - 4.9 * t * t, p0.z + v.z * t); if (p.y <= groundAt(p.x)) { p.y = groundAt(p.x); hit = i; } }
+    pos.setXYZ(i, p.x, p.y, p.z);
+  }
+  pos.needsUpdate = true;
+  tele.ok = hit > 0 && inBounds(p.x, p.z);
+  arcLine.material.color.set(tele.ok ? 0x4dabf7 : 0xe03131);
+  marker.visible = tele.ok; marker.position.set(p.x, p.y + 0.02, p.z); tele.p.copy(p);
+}
+// 懸浮「回到測站」按鈕：離開測站就出現在視線下方，跟著你走
+const homeBtn = new Panel(0.34, 0.085, 680, 170);
+setLayer(homeBtn.mesh, UI); scene.add(homeBtn.mesh); homeBtn.mesh.visible = false;
+function drawHome() {
+  const p = homeBtn; p.bg('#00000000'); p.x.clearRect(0, 0, 680, 170);
+  p.btn(6, 6, 668, 158, `⌂ 回到 ${D.st[S.si].name} 站（儀器旁）`, returnHome, { fill: '#1f5fa8', color: '#fff', stroke: '#ffffff', size: 52, lw: 6 });
+  p.update();
+}
+let homeShown = false;
+function homeTick(dt) {
+  const h = homePos(); headWorld(hv);
+  const away = MODE !== 'menu' && Math.hypot(hv.x - h.x, hv.z - h.z) > 1.0;
+  if (away !== homeShown) { homeShown = away; homeBtn.mesh.visible = away; if (away) { drawHome(); placeHomeBtn(1); } }
+  if (away) placeHomeBtn(Math.min(1, dt * 3));
+}
+function placeHomeBtn(k) {
+  const yaw = headYaw();
+  hv2.set(hv.x - Math.sin(yaw) * 0.7, hv.y - 0.36, hv.z - Math.cos(yaw) * 0.7);
+  homeBtn.mesh.position.lerp(hv2, k);
+  homeBtn.mesh.lookAt(hv);
+}
+// 標籤：依步驟決定哪些顯示，並隨距離縮放
+const STEP_LABELS = { level: ['bubble', 'screw'], aim: ['lens'], focus: ['focus'] };
+function updateLabels() {
+  const st = MODE === 'practice' ? steps[gi] : null;
+  let want = [];
+  if (st) want = labelAll ? null : st.kind === 'info' ? (gi === 0 ? null : ['lens', 'eye']) : (STEP_LABELS[st.kind] || []);
+  camera.getWorldPosition(camPos);
+  for (const L of labels) {
+    L.g.visible = !!st && (want === null || want.includes(L.key));
+    if (!L.g.visible) continue;
+    const A = L.parent.localToWorld(lbA.copy(L.anchor));
+    lbT.subVectors(camPos, A); lbT.y = 0; const d = Math.max(0.2, camPos.distanceTo(A)); lbT.normalize();
+    lbR.crossVectors(UP, lbT);                                  // 你看過去的「右邊」
+    const k = THREE.MathUtils.clamp(d / 0.65, 0.6, 5);          // 走遠了整組等比例放大，排版不變
+    const P = lbP.copy(A).addScaledVector(lbR, L.off[0] * k).addScaledVector(UP, L.off[1] * k);
+    const h = 0.022 * k;
+    L.s.position.copy(P); L.s.scale.set(h * L.s.userData.aspect, h, 1);
+    // 標籤往左時，讓文字整塊在線的左邊；往右時在右邊（線接在文字靠近零件的那一端）
+    L.s.center.set(L.off[0] < -0.05 ? 1 : L.off[0] > 0.05 ? 0 : 0.5, L.off[1] >= 0 ? 0.3 : 0.7);
+    const pa = L.ln.geometry.attributes.position; pa.setXYZ(0, A.x, A.y, A.z); pa.setXYZ(1, P.x, P.y, P.z); pa.needsUpdate = true;
+    L.dot.position.copy(A); L.dot.scale.setScalar(k);
+  }
+}
+const lbA = new V3(), lbT = new V3(), lbR = new V3(), lbP = new V3();
 
 // ═════════════ 進入 VR ═════════════
 const xrBtn = document.getElementById('xr');
@@ -944,17 +1069,17 @@ xrBtn.onclick = async () => {
 // ═════════════ 啟動 ═════════════
 setLayer(stationUI, UI);
 // 面板永遠畫在標籤和虛線上面（不被擋住）
-for (const m of [fb.mesh, ctl.mesh, bub.mesh, telPanel]) {
-  m.renderOrder = 50; m.material.transparent = true; m.material.depthTest = false;
+for (const m of [fb.mesh, ctl.mesh, bub.mesh, telPanel, homeBtn.mesh]) {
+  m.renderOrder = m === homeBtn.mesh ? 60 : 50; m.material.transparent = true; m.material.depthTest = false;
   m.children.forEach((c, i) => { c.renderOrder = 51 + i; if (c.material) c.material.depthTest = false; });
 }
 startMode('menu');
-window.dbg = { S, D: () => D, G, entries: () => entries, trueRead, press, placeStation, look, camera, telCam, renderer, rt, startMode, steps: () => steps, gi: () => gi, goStep, submitRead, st: () => ({ aimPt, blurBias, MODE }) };
+window.dbg = { S, D: () => D, G, entries: () => entries, trueRead, press, placeStation, look, camera, telCam, renderer, rt, startMode, rig, returnHome, teleportTo, keys, labels, homeBtn, steps: () => steps, gi: () => gi, goStep, submitRead, st: () => ({ aimPt, blurBias, MODE }) };
 const clock = new THREE.Clock();
-renderer.setAnimationLoop(() => {
-  const dt = Math.min(clock.getDelta(), 0.05);
-  deskInput(); xrInput(dt); holdTick(dt);
-  updateInstrument(); guideTick(dt);
+renderer.setAnimationLoop(dbg.tick = (fixed) => {
+  const dt = typeof fixed === 'number' && fixed < 1 ? fixed : Math.min(clock.getDelta(), 0.05);
+  deskInput(dt); xrInput(dt); holdTick(dt);
+  updateInstrument(); guideTick(dt); updateLabels(); homeTick(dt);
   if (MODE === 'practice' && (gRedraw -= dt) < 0) { gRedraw = 0.25; const k = steps[gi] && steps[gi].kind; if (k === 'level' || k === 'aim' || k === 'focus') drawFB(); }
   drawBubble(); renderTelescope();
   renderer.render(scene, camera);
