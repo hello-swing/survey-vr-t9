@@ -500,8 +500,8 @@ class Win {
 const angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
 function followTick(dt) {
   headWorld(hv); const yaw = headYaw();
-  follow.turnT = Math.abs(angDiff(yaw, follow.ty)) > 70 * DEG ? follow.turnT + dt : 0;
-  if (follow.force || Math.hypot(hv.x - follow.tp.x, hv.z - follow.tp.z) > 0.45 || follow.turnT > 1.2) {
+  // 只有走動、瞬移、轉身 30° 或按「面板歸位」才重新排到你面前；單純轉頭看四周時面板不動
+  if (follow.force || Math.hypot(hv.x - follow.tp.x, hv.z - follow.tp.z) > 0.45) {
     follow.tp.copy(hv); follow.ty = yaw; follow.force = false; follow.turnT = 0;
   }
   const k = follow.snap ? 1 : Math.min(1, dt * 4); follow.snap = false;
@@ -997,7 +997,13 @@ function drawDia() {
   p.update();
 }
 // 面板歸位：所有面板回到預設位置並重新顯示（不小心弄不見時用）
+// 望遠鏡畫面、氣泡放大圖跟著懸浮面板一起走，彼此的相對位置永遠不變（不會互相重疊）
+function attachHud() {
+  const to = MODE === 'exam' ? stationUI : followUI;
+  to.add(telPanel); to.add(bub.mesh); setLayer(telPanel, UI); setLayer(bub.mesh, UI);
+}
 function resetPanels() {
+  attachHud();
   for (const w of [fbWin, ctlWin, recWin, diaWin]) w.setMode(MODE === 'exam' ? 'fixed' : 'follow');
   if (MODE === 'menu') fbWin.pose(0, 1.81, -0.99, -0.1, 0); else fbWin.pose(-0.8, 1.67, -0.71, -0.25, 0.68);
   ctlWin.pose(0.98, 1.58, -0.65, -0.3, -0.85); fbWin.setCollapsed(false); ctlWin.setCollapsed(false);
@@ -1447,6 +1453,7 @@ function startMode(m) {
   setZoom(1); setBig(false);
   // 實戰模式不能移動：面板固定在測站（不需要懸浮）；練習模式恢復懸浮
   for (const w of [fbWin, ctlWin, recWin, diaWin]) w.setMode(m === 'exam' ? 'fixed' : 'follow');
+  attachHud();
   clearData();
   if (m === 'practice') { steps = buildSteps(); goStep(0); }
   const show = m === 'practice';
