@@ -26,9 +26,8 @@
   <p><b>電腦操作</b>（Quest 上用手把，見右側面板說明）<br>
   拖曳滑鼠：看四周　滾輪：放大縮小<br>
   點面板上的按鈕：<b>點一下 = 轉一小格，按住 = 連續轉</b><br>
-  <kbd>A</kbd><kbd>D</kbd> 鏡頭左右微調（加 <kbd>Shift</kbd> 大轉）<br>
-  <kbd>W</kbd><kbd>S</kbd> 對焦遠／近　數字鍵：輸入讀數<br>
-  <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> 在場地裡走動（加 <kbd>Shift</kbd> 跑步）。走遠了，畫面下方會出現「回到測站」按鈕</p>
+  <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>（或方向鍵）在場地裡走動，加 <kbd>Shift</kbd> 跑步。走遠了，畫面下方會出現「回到測站」按鈕<br>
+  儀器用滑鼠點面板操作　數字鍵：輸入讀數</p>
   <p><button id="hideHud">收起說明</button></p>
 </div>
 <button id="hudToggle">說明</button>
@@ -259,12 +258,32 @@ let sightLine;
   bubble.scale.y = 0.4; bubble.position.set(0, 0.063, 0.035); tilted.add(bubble); tilted.userData.bubble = bubble;
   upper.position.y = 0.17;
   upper.add(new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.09, 0.2), bodyM));
-  const obj = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.05, 20), darkM); obj.rotation.x = Math.PI / 2; obj.position.z = -0.12; upper.add(obj);
-  const lens = new THREE.Mesh(new THREE.CircleGeometry(0.026, 20), new THREE.MeshBasicMaterial({ color: 0x5fa8d8 })); lens.position.z = -0.1451; lens.rotation.y = Math.PI; upper.add(lens);
-  const eye = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.04, 16), darkM); eye.rotation.x = Math.PI / 2; eye.position.z = 0.12; upper.add(eye);
+  // 鏡頭（前面）：又大又像喇叭口，紅色環＋亮藍色鏡片
+  const hoodM = new THREE.MeshLambertMaterial({ color: 0x2c2f33, side: THREE.DoubleSide });
+  const hood = new THREE.Mesh(new THREE.CylinderGeometry(0.046, 0.035, 0.06, 28, 1, true), hoodM); hood.rotation.x = -Math.PI / 2; hood.position.z = -0.13; upper.add(hood);
+  const redRing = new THREE.Mesh(new THREE.CylinderGeometry(0.037, 0.037, 0.014, 28), new THREE.MeshLambertMaterial({ color: 0xd23b3b })); redRing.rotation.x = Math.PI / 2; redRing.position.z = -0.106; upper.add(redRing);
+  const lens = new THREE.Mesh(new THREE.CircleGeometry(0.036, 28), new THREE.MeshBasicMaterial({ color: 0x4fa3e0 })); lens.position.z = -0.135; lens.rotation.y = Math.PI; upper.add(lens);
+  const glint = new THREE.Mesh(new THREE.CircleGeometry(0.009, 12), new THREE.MeshBasicMaterial({ color: 0xffffff })); glint.position.set(0.012, 0.012, -0.1352); glint.rotation.y = Math.PI; upper.add(glint);
+  // 目鏡（後面）：細細小小、黑色橡膠眼罩，沒有亮色鏡片
+  const eyeBase = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.024, 0.02, 20), darkM); eyeBase.rotation.x = Math.PI / 2; eyeBase.position.z = 0.108; upper.add(eyeBase);
+  const eye = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.03, 16), darkM); eye.rotation.x = Math.PI / 2; eye.position.z = 0.13; upper.add(eye);
+  const cup = new THREE.Mesh(new THREE.TorusGeometry(0.014, 0.005, 8, 20), new THREE.MeshLambertMaterial({ color: 0x111111 })); cup.position.z = 0.146; upper.add(cup);
+  // 練習模式：機身兩側印「前／後」，上面一個紅色箭頭指向前方
+  const sideTex = (txt) => {
+    const c = document.createElement('canvas'); c.width = 760; c.height = 200; const x = c.getContext('2d');
+    x.font = `600 64px ${FONT}`; x.textBaseline = 'middle';
+    txt.forEach(([t, col, al, px]) => { x.fillStyle = col; x.textAlign = al; x.fillText(t, px, 100); });
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = MAXANI; return t;
+  };
+  const decal = (tex, x, ry) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(0.19, 0.05), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false })); m.position.set(x, 0, 0); m.rotation.y = ry; upper.add(m); practiceOnly.push(m); };
+  decal(sideTex([['後・目鏡', '#4a4740', 'left', 20], ['鏡頭・前 ▶', '#c0281e', 'right', 740]]), 0.0381, Math.PI / 2);
+  decal(sideTex([['◀ 前・鏡頭', '#c0281e', 'left', 20], ['目鏡・後', '#4a4740', 'right', 740]]), -0.0381, -Math.PI / 2);
+  const tri = new THREE.Shape(); tri.moveTo(0, 0.035); tri.lineTo(0.022, -0.01); tri.lineTo(-0.022, -0.01); tri.closePath();
+  const topArrow = new THREE.Mesh(new THREE.ShapeGeometry(tri), new THREE.MeshBasicMaterial({ color: 0xd23b3b, side: THREE.DoubleSide }));
+  topArrow.rotation.x = -Math.PI / 2; topArrow.position.set(0, 0.0456, -0.045); upper.add(topArrow); practiceOnly.push(topArrow);
   const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.02, 16), darkM); knob.rotation.z = Math.PI / 2; knob.position.set(0.048, 0.01, -0.02); upper.add(knob);
   const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, 0.12, 16), bodyM); neck.position.y = -0.105; upper.add(neck);
-  upper.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.012, 0.12), darkM), 0, 0.052, 0));
+  upper.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.012, 0.08), darkM), 0, 0.052, 0.03));
   // 視線（練習模式）：從鏡頭往前射出的紅色虛線
   const sg = new THREE.BufferGeometry().setFromPoints([new V3(0, 0, -0.15), new V3(0, 0, -70)]);
   sightLine = new THREE.Line(sg, new THREE.LineDashedMaterial({ color: 0xe03131, dashSize: 0.25, gapSize: 0.15 }));
@@ -326,6 +345,7 @@ function placeStation(si, fresh = true) {
   stationUI.position.set(s.x, s.gy, s.z + 0.6);   // 面板固定在測站，不跟著人走
   returnHome();
   updateTilt();
+  if (fresh) { levelDone = false; levelT = 0; if (MODE === 'exam') setCtlTab('screw'); }
 }
 
 // ═════════════ 望遠鏡畫面 ═════════════
@@ -419,37 +439,96 @@ function drawBubble() {
   bub.update();
 }
 
-// 操作面板
-const ctl = new Panel(0.66, 0.44, 1100, 733);
-ctl.mesh.position.set(0.98, 1.3, -0.62); ctl.mesh.rotation.set(-0.3, -0.85, 0, 'YXZ'); stationUI.add(ctl.mesh);
+// ═════════════ 懸浮視窗：上方標題列（可切換「懸浮／固定在測站」、可收合） ═════════════
+// 懸浮 = 跟著你走：你走動或轉身很久時才會重新排到你面前；原地轉頭看面板時不會亂跑
+const followUI = new THREE.Group(); scene.add(followUI);
+const follow = { tp: new V3(), ty: 0, turnT: 0, force: true, snap: true };
+const wins = [];
+class Win {
+  constructor(body, w, h, drawBar) {
+    this.body = body; this.w = w; this.h = h; this.drawBarFn = drawBar;
+    body.mesh.geometry.translate(0, -h / 2, 0);                      // 原點改在上緣，收合時標題列不動
+    this.bar = new Panel(w, 0.075, Math.round(w * 1700), 128);
+    this.bar.mesh.position.y = 0.0425;
+    this.g = new THREE.Group(); this.g.add(this.bar.mesh, body.mesh);
+    this.mode = 'follow'; this.collapsed = false;
+    stationUI.add(this.g); this.setMode('follow');
+    wins.push(this);
+  }
+  setMode(m) { this.mode = m; (m === 'fixed' ? stationUI : followUI).add(this.g); setLayer(this.g, UI); this.drawBar(); }
+  setCollapsed(c) { this.collapsed = c; this.body.mesh.visible = !c; this.drawBar(); }
+  pose(x, y, z, rx, ry) { this.g.position.set(x, y, z); this.g.rotation.set(rx, ry, 0, 'YXZ'); }
+  drawBar() {
+    const p = this.bar, W = p.c.width; p.bg('#2f3e4e');
+    const right = this.drawBarFn(p, W) || 0;
+    // 右側：收合／懸浮切換
+    p.btn(W - 190, 14, 176, 100, this.collapsed ? '展開 ▼' : '收合 ▲', () => this.setCollapsed(!this.collapsed), { size: 32, fill: '#3f5266', color: '#fff', stroke: '#6f8499' });
+    p.btn(W - 470, 14, 270, 100, this.mode === 'follow' ? '懸浮中（跟著我）' : '固定在測站', () => this.setMode(this.mode === 'follow' ? 'fixed' : 'follow'),
+      { size: 30, fill: this.mode === 'follow' ? '#1f5fa8' : '#6b4a2b', color: '#fff', stroke: '#ffffff' });
+    p.update();
+  }
+}
+const angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
+function followTick(dt) {
+  headWorld(hv); const yaw = headYaw();
+  follow.turnT = Math.abs(angDiff(yaw, follow.ty)) > 70 * DEG ? follow.turnT + dt : 0;
+  if (follow.force || Math.hypot(hv.x - follow.tp.x, hv.z - follow.tp.z) > 0.45 || follow.turnT > 1.2) {
+    follow.tp.copy(hv); follow.ty = yaw; follow.force = false; follow.turnT = 0;
+  }
+  const k = follow.snap ? 1 : Math.min(1, dt * 4); follow.snap = false;
+  followUI.position.lerp(hv2.set(follow.tp.x, follow.tp.y - 1.6, follow.tp.z), k);
+  followUI.rotation.y += angDiff(follow.ty, followUI.rotation.y) * k;
+}
+
+// 操作面板：三個分頁
+const ctl = new Panel(0.66, 0.282, 1100, 470);
+let ctlTab = 'main', levelDone = false, levelT = 0, lastCat = '';
+const CTL_TABS = [['main', '轉鏡頭・對焦'], ['screw', '腳螺旋'], ['help', '按鍵說明']];
+function setCtlTab(t) { ctlTab = t; if (ctlWin.collapsed) ctlWin.setCollapsed(false); ctlWin.drawBar(); drawCtl(); }
+const ctlWin = new Win(ctl, 0.66, 0.282, (p) => {
+  CTL_TABS.forEach(([k, name], i) => {
+    const on = ctlTab === k;
+    p.btn(14 + i * 206, 14, 196, 100, name, () => setCtlTab(k), { size: 30, fill: on ? '#fbfaf6' : '#3f5266', color: on ? '#1f5fa8' : '#e8edf2', stroke: on ? '#fbfaf6' : '#6f8499' });
+  });
+});
 function drawCtl() {
   const p = ctl; p.bg('#f7f5ef');
-  p.text('操作面板', 24, 36, 34, '#2b2a27', 'left', '500');
-  p.text('點一下 = 一小格　按住 = 連續', 200, 37, 24, '#8a5a00', 'left', '500');
-  if (MODE === 'practice') p.btn(640, 8, 436, 58, labelAll ? '標籤：全部顯示（點我切換）' : '標籤：只顯示這步（點我切換）', () => { labelAll = !labelAll; }, { size: 23, fill: labelAll ? '#fff8e0' : '#ffffff' });
-  p.text('轉鏡頭', 24, 120, 30, '#2b2a27', 'left', '500');
-  p.btn(150, 78, 215, 86, '◀◀ 大轉', () => turnYaw(STEP.yawBig), { rep: true });
-  p.btn(375, 78, 215, 86, '◀ 微調', () => turnYaw(STEP.yawFine), { rep: true, fill: '#eef3fa' });
-  p.btn(600, 78, 215, 86, '微調 ▶', () => turnYaw(-STEP.yawFine), { rep: true, fill: '#eef3fa' });
-  p.btn(825, 78, 250, 86, '大轉 ▶▶', () => turnYaw(-STEP.yawBig), { rep: true });
-  p.text('對焦', 24, 228, 30, '#2b2a27', 'left', '500');
-  p.btn(150, 186, 455, 86, '◀ 看近一點', () => focusStep(-1), { rep: true });
-  p.btn(620, 186, 455, 86, '看遠一點 ▶', () => focusStep(1), { rep: true });
-  p.text('腳螺旋', 24, 350, 30, '#2b2a27', 'left', '500');
-  p.text('（調水平用）', 24, 390, 22, '#6b6860');
-  for (let k = 0; k < 3; k++) {
-    const x0 = 150 + k * 310, col = SCREW_CSS[k], on = S.sel === k;
-    p.rect(x0, 292, 295, 150, on ? '#fff8e0' : '#ffffff', col, on ? 5 : 2);
-    p.text(`${SCREW_NAME[k]}色螺旋`, x0 + 147, 318, 26, col, 'center', '500');
-    p.btn(x0 + 12, 342, 130, 88, '↺', () => turnScrew(k, -1), { rep: true, color: col, stroke: col, size: 44 });
-    p.btn(x0 + 153, 342, 130, 88, '↻', () => turnScrew(k, 1), { rep: true, color: col, stroke: col, size: 44 });
+  if (ctlTab === 'main') {
+    p.text('轉鏡頭', 24, 72, 30, '#2b2a27', 'left', '500');
+    p.btn(150, 30, 215, 86, '◀◀ 大轉', () => turnYaw(STEP.yawBig), { rep: true });
+    p.btn(375, 30, 215, 86, '◀ 微調', () => turnYaw(STEP.yawFine), { rep: true, fill: '#eef3fa' });
+    p.btn(600, 30, 215, 86, '微調 ▶', () => turnYaw(-STEP.yawFine), { rep: true, fill: '#eef3fa' });
+    p.btn(825, 30, 250, 86, '大轉 ▶▶', () => turnYaw(-STEP.yawBig), { rep: true });
+    p.text('對焦', 24, 182, 30, '#2b2a27', 'left', '500');
+    p.btn(150, 140, 455, 86, '◀ 看近一點', () => focusStep(-1), { rep: true });
+    p.btn(620, 140, 455, 86, '看遠一點 ▶', () => focusStep(1), { rep: true });
+    p.text('點一下 = 轉一小格　按住 = 連續轉', 24, 278, 26, '#8a5a00', 'left', '500');
+    p.text('需要重新調水平時，切到上方「腳螺旋」分頁。', 24, 322, 24, '#6b6860');
+    if (MODE === 'practice') p.btn(24, 368, 560, 80, labelAll ? '部位標籤：全部顯示（點我切換）' : '部位標籤：只顯示這一步（點我切換）', () => { labelAll = !labelAll; }, { size: 26, fill: labelAll ? '#fff8e0' : '#ffffff' });
+  } else if (ctlTab === 'screw') {
+    p.text('轉腳螺旋，把氣泡調進小圓圈（調水平）', 24, 34, 28, '#2b2a27', 'left', '500');
+    for (let k = 0; k < 3; k++) {
+      const x0 = 24 + k * 354, col = SCREW_CSS[k], on = S.sel === k;
+      p.rect(x0, 66, 338, 160, on ? '#fff8e0' : '#ffffff', col, on ? 5 : 2);
+      p.text(`${SCREW_NAME[k]}色螺旋`, x0 + 169, 94, 26, col, 'center', '500');
+      p.btn(x0 + 14, 122, 150, 90, '↺', () => turnScrew(k, -1), { rep: true, color: col, stroke: col, size: 44 });
+      p.btn(x0 + 174, 122, 150, 90, '↻', () => turnScrew(k, 1), { rep: true, color: col, stroke: col, size: 44 });
+    }
+    p.text('↻ 把那一角抬高，氣泡會往那顆螺旋跑；↺ 相反。', 24, 262, 26, '#4a4740');
+    const ok = G.length() <= LEVEL_OK;
+    p.text(ok ? '已經水平了 ✓' : '還沒水平（看上方的氣泡放大圖）', 24, 306, 26, ok ? '#2f7d32' : '#a86a00', 'left', '500');
+    p.btn(24, 352, 520, 90, '調好了，回到「轉鏡頭・對焦」', () => setCtlTab('main'), { size: 28, fill: ok ? '#1f5fa8' : '#ffffff', color: ok ? '#fff' : '#2b2a27', stroke: ok ? '#1f5fa8' : '#9a968c' });
+  } else {
+    p.text('Quest 手把', 24, 34, 28, '#2b2a27', 'left', '500');
+    p.text('板機：點按鈕（按住 = 連續）　握把＋轉動手把：大幅轉鏡頭', 24, 80, 25, '#4a4740');
+    p.text('左搖桿：左右 = 鏡頭微調一格，上下 = 對焦', 24, 120, 25, '#4a4740');
+    p.text('右搖桿：往前推瞄準地面、放開就瞬移；左右 = 轉身 30°', 24, 160, 25, '#4a4740');
+    p.text('電腦', 24, 222, 28, '#2b2a27', 'left', '500');
+    p.text('W A S D（或方向鍵）：走路，加 Shift 跑步　拖曳滑鼠：看四周', 24, 268, 25, '#4a4740');
+    p.text('滑鼠點面板上的按鈕操作儀器　數字鍵：輸入讀數　Enter：確認', 24, 308, 25, '#4a4740');
+    p.text('面板上方的「懸浮中／固定在測站」可以切換面板要跟著你走，', 24, 370, 24, '#6b6860');
+    p.text('還是留在儀器旁邊；「收合」可以先把面板縮起來。', 24, 408, 24, '#6b6860');
   }
-  p.text('↻ 把那一角抬高，氣泡會往那顆螺旋跑；↺ 相反。', 24, 478, 26, '#4a4740');
-  p.text('Quest 手把：', 24, 540, 26, '#2b2a27', 'left', '500');
-  p.text('按住握把（中指按鈕）再轉動手把 = 像用手推儀器一樣大幅轉向', 24, 582, 25, '#4a4740');
-  p.text('左搖桿 輕推左右 = 微調一格（推住不放 = 連續）　上下 = 對焦', 24, 622, 25, '#4a4740');
-  p.text('右搖桿 往前推 = 瞄準地面、放開就瞬移過去　左右 = 轉身 30°　板機 = 點按鈕', 24, 662, 25, '#4a4740');
-  p.text('電腦：A/D 微調、W/S 對焦、方向鍵 走路、數字鍵輸入讀數', 24, 702, 25, '#4a4740');
   p.update();
 }
 
@@ -463,7 +542,7 @@ let entries, meta, sel, view = 'book';
 function resetBook() { entries = ROWS.map(() => ['', '', '']); meta = ROWS.map(() => [null, null, null]); sel = { r: 0, c: 0 }; view = 'book'; }
 resetBook();
 const fb = new Panel(0.80, 0.72, 1120, 1008);
-fb.mesh.position.set(-0.64, 1.32, -0.72); fb.mesh.rotation.set(-0.25, 0.62, 0, 'YXZ'); stationUI.add(fb.mesh);
+const fbWin = new Win(fb, 0.80, 0.72, (p) => p.text(MODE === 'menu' ? '選單' : MODE === 'practice' ? '練習引導' : view === 'book' ? '量測記錄表' : '評分結果', 28, 64, 40, '#ffffff', 'left', '500'));
 const fmt = s => s ? (s.padEnd(4, '_')[0] + '.' + s.padEnd(4, '_').slice(1)) : '';
 const val = s => s && s.length === 4 ? parseInt(s, 10) / 1000 : null;
 let aimPt = -1, blurBias = 0;
@@ -473,6 +552,7 @@ function drawFB() {
   else if (MODE === 'practice') drawGuide();
   else { fb.bg(); if (view === 'book') drawBook(); else drawResults(); }
   fb.update();
+  const key = MODE + view; if (fbWin.lastKey !== key) { fbWin.lastKey = key; fbWin.drawBar(); }
 }
 function drawMenu() {
   const p = fb; p.bg();
@@ -641,6 +721,7 @@ function readHint(v) {
   return `中線位置 = ${base.toFixed(2)}（數字「${String(Math.round(base * 100)).padStart(3, '0')}」下面那條粗線）＋ 往上 ${blocks} 格 × 0.5 cm（= ${blocks * 5} mm）＋ 再估 ${rem} mm ≈ ${v.toFixed(3)}`;
 }
 function goStep(i) {
+  { const k = steps[i] && steps[i].kind, cat = k === 'info' ? 'help' : k === 'level' ? 'screw' : 'main'; if (cat !== lastCat) { lastCat = cat; setCtlTab(cat); } }
   gi = i; gHold = 0; gInput = ''; gMsg = ''; gTries = 0; gShowHint = false;
   drawFB();
 }
@@ -679,7 +760,7 @@ function drawGuide() {
     T(`${D.st[st.si].name} 站：把儀器調水平`);
     B('為什麼？儀器要水平，看出去的視線才會是水平的，讀數才準。');
     B('看前方的「氣泡放大圖」：白色氣泡要跑進中間的小圓圈。');
-    B('用右邊「操作面板」的彩色 ↺ ↻ 按鈕轉腳螺旋。↻ 會把那一角抬高，氣泡就往那顆螺旋跑。');
+    B('用右邊操作面板「腳螺旋」分頁的彩色 ↺ ↻ 按鈕轉腳螺旋。↻ 會把那一角抬高，氣泡就往那顆螺旋跑。');
     const tilt = G.length() / MIN, h = levelHint();
     y += 10;
     if (G.length() <= LEVEL_OK) B(`目前：已經水平了！保持一下…`, '#2f7d32', 32);
@@ -784,10 +865,13 @@ function startMode(m) {
   if (m === 'practice') { steps = buildSteps(); goStep(0); }
   const show = m === 'practice';
   practiceOnly.forEach(o => o.visible = show); roleLabels.forEach(o => o.visible = show);
-  ctl.mesh.visible = telPanel.visible = bub.mesh.visible = m !== 'menu';
-  if (m === 'menu') { fb.mesh.position.set(0, 1.45, -0.95); fb.mesh.rotation.set(-0.1, 0, 0); }   // 選單放正前方
-  else { fb.mesh.position.set(-0.74, 1.32, -0.64); fb.mesh.rotation.set(-0.25, 0.68, 0, 'YXZ'); }   // 往左挪，讓出儀器周圍給標籤
-  drawCtl(); drawFB();
+  ctlWin.g.visible = telPanel.visible = bub.mesh.visible = m !== 'menu';
+  if (m === 'menu') fbWin.pose(0, 1.81, -0.99, -0.1, 0);              // 選單放正前方（座標是面板上緣）
+  else fbWin.pose(-0.8, 1.67, -0.71, -0.25, 0.68);                     // 左邊，讓出儀器周圍給標籤
+  ctlWin.pose(0.98, 1.5, -0.65, -0.3, -0.85);
+  fbWin.setCollapsed(false); ctlWin.setCollapsed(false);
+  ctlTab = m === 'practice' ? 'help' : 'screw'; levelDone = false;
+  ctlWin.drawBar(); drawCtl(); drawFB();
 }
 
 // ═════════════ 每幀：儀器、對焦、望遠鏡 ═════════════
@@ -850,15 +934,10 @@ addEventListener('keydown', e => {
   if (dm && !e.repeat) press(dm[2]);
   if (e.code === 'Backspace') press('back');
   if (e.code === 'Enter') { if (MODE === 'practice' && steps[gi] && steps[gi].kind === 'read') submitRead(); else if (MODE === 'exam') { nextCell(); drawFB(); } }
-  const big = e.shiftKey;
-  if (e.code === 'KeyA') turnYaw(big ? STEP.yawBig : STEP.yawFine);
-  if (e.code === 'KeyD') turnYaw(-(big ? STEP.yawBig : STEP.yawFine));
-  if (e.code === 'KeyW') focusStep(1);
-  if (e.code === 'KeyS') focusStep(-1);
 });
 let look = { yaw: 0, pitch: -0.3 }, drag = null;
 const ray = new THREE.Raycaster(); ray.layers.set(UI);
-const clickables = () => [...(homeBtn.mesh.visible ? [homeBtn.mesh] : []), fb.mesh, ...(ctl.mesh.visible ? [ctl.mesh] : []), ...screwMeshes];
+const clickables = () => [...(homeBtn.mesh.visible ? [homeBtn.mesh] : []), ...wins.flatMap(w => w.g.visible ? [w.bar.mesh, ...(w.collapsed ? [] : [w.body.mesh])] : []), ...screwMeshes];
 function pressHit(h) {
   if (!h) return false;
   if (h.object.userData.panel) { const r = h.object.userData.panel.find(h.uv); if (r) startPress(r); return true; }
@@ -947,7 +1026,7 @@ function xrInput(dt) {
 function deskInput(dt) {
   if (renderer.xr.isPresenting) return;
   camera.rotation.y = look.yaw; camera.rotation.x = look.pitch;
-  const f = (keys.ArrowUp ? 1 : 0) - (keys.ArrowDown ? 1 : 0), r = (keys.ArrowRight ? 1 : 0) - (keys.ArrowLeft ? 1 : 0);
+  const f = (keys.ArrowUp || keys.KeyW ? 1 : 0) - (keys.ArrowDown || keys.KeyS ? 1 : 0), r = (keys.ArrowRight || keys.KeyD ? 1 : 0) - (keys.ArrowLeft || keys.KeyA ? 1 : 0);
   if (f || r) {
     const sp = (keys.shift ? 7 : 2.5) * dt, a = look.yaw + rig.rotation.y;
     const nx = rig.position.x + (-Math.sin(a) * f + Math.cos(a) * r) * sp, nz = rig.position.z + (-Math.cos(a) * f - Math.sin(a) * r) * sp;
@@ -967,9 +1046,9 @@ function headYaw() { rig.updateMatrixWorld(true); camera.getWorldDirection(hd); 
 function moveHeadTo(x, z) { headWorld(hv); rig.position.x += x - hv.x; rig.position.z += z - hv.z; rig.position.y = groundAt(x); }
 function snapTurn(dir) {                       // 繞著頭轉，人不會被甩出去
   headWorld(hv); rig.rotation.y += dir * 30 * DEG; headWorld(hv2);
-  rig.position.x += hv.x - hv2.x; rig.position.z += hv.z - hv2.z;
+  rig.position.x += hv.x - hv2.x; rig.position.z += hv.z - hv2.z; follow.force = true;
 }
-function teleportTo(x, z) { moveHeadTo(x, z); }
+function teleportTo(x, z) { moveHeadTo(x, z); follow.force = true; }
 function homePos() { const s = D.st[S.si]; return { x: s.x, z: s.z + 0.6 }; }
 function returnHome() {
   const h = homePos();
@@ -979,6 +1058,7 @@ function returnHome() {
     rig.rotation.y = 0; rig.position.set(h.x, groundAt(h.x), h.z);
     look.yaw = 0; look.pitch = -0.3;
   }
+  follow.force = follow.snap = true;
 }
 // 瞬移瞄準線（拋物線＋落點圓圈）
 const tele = { ctrl: null, ok: false, p: new V3(), snapped: false };
@@ -1069,17 +1149,18 @@ xrBtn.onclick = async () => {
 // ═════════════ 啟動 ═════════════
 setLayer(stationUI, UI);
 // 面板永遠畫在標籤和虛線上面（不被擋住）
-for (const m of [fb.mesh, ctl.mesh, bub.mesh, telPanel, homeBtn.mesh]) {
+for (const m of [fb.mesh, ctl.mesh, fbWin.bar.mesh, ctlWin.bar.mesh, bub.mesh, telPanel, homeBtn.mesh]) {
   m.renderOrder = m === homeBtn.mesh ? 60 : 50; m.material.transparent = true; m.material.depthTest = false;
   m.children.forEach((c, i) => { c.renderOrder = 51 + i; if (c.material) c.material.depthTest = false; });
 }
 startMode('menu');
-window.dbg = { S, D: () => D, G, entries: () => entries, trueRead, press, placeStation, look, camera, telCam, renderer, rt, startMode, rig, returnHome, teleportTo, keys, labels, homeBtn, steps: () => steps, gi: () => gi, goStep, submitRead, st: () => ({ aimPt, blurBias, MODE }) };
+window.dbg = { S, D: () => D, G, entries: () => entries, trueRead, press, placeStation, look, camera, telCam, renderer, rt, startMode, rig, returnHome, teleportTo, keys, labels, homeBtn, wins, ctlTab: () => ctlTab, steps: () => steps, gi: () => gi, goStep, submitRead, st: () => ({ aimPt, blurBias, MODE }) };
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(dbg.tick = (fixed) => {
   const dt = typeof fixed === 'number' && fixed < 1 ? fixed : Math.min(clock.getDelta(), 0.05);
   deskInput(dt); xrInput(dt); holdTick(dt);
-  updateInstrument(); guideTick(dt); updateLabels(); homeTick(dt);
+  updateInstrument(); guideTick(dt); updateLabels(); homeTick(dt); followTick(dt);
+  if (MODE === 'exam' && !levelDone) { levelT = G.length() <= LEVEL_OK ? levelT + dt : 0; if (levelT > 1.5) { levelDone = true; if (ctlTab === 'screw') setCtlTab('main'); } }
   if (MODE === 'practice' && (gRedraw -= dt) < 0) { gRedraw = 0.25; const k = steps[gi] && steps[gi].kind; if (k === 'level' || k === 'aim' || k === 'focus') drawFB(); }
   drawBubble(); renderTelescope();
   renderer.render(scene, camera);
