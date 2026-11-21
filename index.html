@@ -26,8 +26,8 @@
   <p><b>電腦操作</b>（Quest 上用手把，見右側面板說明）<br>
   拖曳滑鼠：看四周　滾輪：放大縮小<br>
   點面板上的按鈕：<b>點一下 = 轉一小格，按住 = 連續轉</b><br>
-  <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>（或方向鍵）在場地裡走動，加 <kbd>Shift</kbd> 跑步。走遠了，畫面下方會出現「回到測站」按鈕<br>
-  儀器用滑鼠點面板操作　數字鍵：輸入讀數</p>
+  <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>（或方向鍵）在場地裡走動，加 <kbd>Shift</kbd> 跑步（實戰模式不能走動）。走遠了，畫面下方會出現「回到測站」按鈕<br>
+  儀器用滑鼠點面板操作　數字鍵／+−×÷：輸入讀數或算式　Enter：確認</p>
   <p><button id="hideHud">收起說明</button></p>
 </div>
 <button id="hudToggle">說明</button>
@@ -85,7 +85,7 @@ function interp(g, x) {
 function genData() {
   for (;;) {
     const g = [0];
-    for (let i = 1; i < 7; i++) g.push(g[i - 1] + rnd(-0.45, 0.45));
+    for (let i = 1; i < 7; i++) g.push(g[i - 1] + rnd(-0.25, 0.25));
     const tops = g.map(v => v + 0.02);
     const st = [{ name: 'P', x: 30, z: 1.5, pts: [0, 1, 2, 3] }, { name: 'Q', x: 90, z: 1.5, pts: [3, 4, 5, 6] }];
     let ok = true;
@@ -96,7 +96,9 @@ function genData() {
     if (!ok) continue;
     const HA = r3(rnd(30, 150));
     const H = tops.map(t => HA + t - tops[0]);
-    return { g, tops, st, HA, HG: r3(H[6]), H };
+    const G1s = [-1.2, -0.9, -0.7, -0.5, 0.5, 0.7, 0.9, 1.2], G1 = G1s[Math.floor(Math.random() * 8)];
+    let G2 = [-1.2, -0.9, -0.6, -0.4, 0.4, 0.6, 0.9, 1.2][Math.floor(Math.random() * 8)]; if (G2 === G1) G2 = -G1;
+    return { g, tops, st, HA, HG: r3(H[6]), H, HpA: r3(HA + rnd(-0.2, 0.2)), G1, G2, L: 120 };   // 後四個 = 豎曲線已知資料
   }
 }
 D = genData();
@@ -178,25 +180,38 @@ function addLabel(key, parent, text, anchor, off, color = '#1f5fa8') {
 
 // ═════════════ 水準尺（5 mm 式，自繪） ═════════════
 function staffCanvas(m) {
-  const W = 256, Hh = 2048, s = Hh / 1000, c = document.createElement('canvas'); c.width = W; c.height = Hh;
-  const x = c.getContext('2d'), Y = mm => Hh - mm * s;
-  x.fillStyle = '#fbf3cf'; x.fillRect(0, 0, W, Hh);
-  x.fillStyle = '#151515';
-  for (let k = 0; k < 200; k += 2) x.fillRect(14, Y(k * 5 + 5), 96, 5 * s);
-  for (let q = 0; q < 20; q += 2) x.fillRect(96, Y(q * 50 + 50), 22, 50 * s);
-  for (let d = 0; d < 10; d++) {
-    const mm = d * 100, cm = m * 100 + d * 10;
-    x.fillStyle = '#151515'; x.fillRect(122, Y(mm) - 2, W - 122, 4);
-    if (m === 0 && d === 0) continue;
-    x.font = 'bold 64px Arial,sans-serif'; x.textBaseline = 'bottom'; x.textAlign = 'left';
-    x.fillText(String(cm).padStart(3, '0'), 126, Y(mm) - 8);
-    x.fillStyle = '#d0201c';
-    for (let i = 0; i < m; i++) { x.beginPath(); x.arc(146 + i * 30, Y(mm) - 96, 10, 0, 7); x.fill(); }
+  // 仿考場用的 5 mm 刻劃尺（同老師網站「水準尺讀數5mm」教具樣式）：
+  // 右側每公分一個小數字（149 = 1.49 m）；左欄每公分上半 5 mm 黑塊、右欄奇數公分整格黑，組成 E 字形；
+  // 每公寸一條長橫線，紅色公寸數字在線下方、紅點（公尺數）在線上方；整公尺寫紅字＋M；每公尺底色白／黃交替
+  const Hh = 4096, s = Hh / 1000, W = Math.round(50 * s), c = document.createElement('canvas'); c.width = W; c.height = Hh;
+  const x = c.getContext('2d'), Y = mm => Hh - (mm - m * 1000) * s, X = f => W * f;
+  x.fillStyle = m % 2 === 0 ? '#f3f2ee' : '#fbe800'; x.fillRect(0, 0, W, Hh);
+  x.fillStyle = '#777'; x.fillRect(0, 0, W * 0.045, Hh); x.fillRect(X(0.955), 0, W * 0.045, Hh);
+  const ink = '#262626', red = '#e0001b';
+  for (let n = m * 100 - 12; n < m * 100 + 112; n++) {
+    if (n < 0) continue;
+    const y0 = Y(n * 10), y5 = Y(n * 10 + 5), y1 = Y(n * 10 + 10);
+    x.fillStyle = ink;
+    x.fillRect(X(0.435), y1, W * 0.13, y5 - y1);
+    if (n % 2 === 1) x.fillRect(X(0.565), y1, W * 0.065, y0 - y1);
+    if (n % 5 === 0) x.fillRect(X(0.565), y0 - 2, W * 0.085, 4);
+    if (n > 0) { x.font = `bold ${Math.round(6.2 * s)}px "Arial Narrow",Arial,sans-serif`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(String(n), X(0.79), y0); }
+    if (n % 10 === 0 && n > 0) {
+      x.fillRect(X(0.17), y0 - 3, W * 0.265, 6);
+      const meters = Math.floor(n / 100), dmD = (n / 10) % 10;
+      x.fillStyle = red; x.textAlign = 'center'; x.textBaseline = 'alphabetic';
+      if (n % 100 === 0) {
+        x.font = `bold ${Math.round(30 * s)}px Arial,sans-serif`; x.fillText(String(meters), X(0.3), Y(n * 10 + 4));
+        x.font = `bold ${Math.round(25 * s)}px Arial,sans-serif`; x.fillText('M', X(0.3), Y(n * 10 - 29));
+      } else {
+        x.font = `bold ${Math.round(30 * s)}px Arial,sans-serif`; x.fillText(String(dmD), X(0.3), Y(n * 10 - 29));
+        for (let i = 0; i < meters; i++) { x.beginPath(); x.arc(X(0.3) + (i - (meters - 1) / 2) * 3.5 * s * 2.8, Y(n * 10 + 9), 3.5 * s, 0, 7); x.fill(); }
+      }
+    }
   }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = MAXANI;
   return t;
-}
-const staffTex = [0, 1, 2].map(staffCanvas);
+}const staffTex = [0, 1, 2].map(staffCanvas);
 const staffBodyM = new THREE.MeshLambertMaterial({ color: 0xe8d9a0 });
 const staffFaceM = staffTex.map(t => new THREE.MeshBasicMaterial({ map: t }));
 const staffs = [], roleLabels = [];
@@ -462,7 +477,7 @@ class Win {
     const p = this.bar, W = p.c.width; p.bg('#2f3e4e');
     const right = this.drawBarFn(p, W) || 0;
     // 右側：收合／懸浮切換
-    p.btn(W - 190, 14, 176, 100, this.collapsed ? '展開 ▼' : '收合 ▲', () => this.setCollapsed(!this.collapsed), { size: 32, fill: '#3f5266', color: '#fff', stroke: '#6f8499' });
+    if (MODE !== 'exam') p.btn(W - 190, 14, 176, 100, this.collapsed ? '展開 ▼' : '收合 ▲', () => this.setCollapsed(!this.collapsed), { size: 32, fill: '#3f5266', color: '#fff', stroke: '#6f8499' });   // 實戰模式不能收合
     p.btn(W - 470, 14, 270, 100, this.mode === 'follow' ? '懸浮中（跟著我）' : '固定在測站', () => this.setMode(this.mode === 'follow' ? 'fixed' : 'follow'),
       { size: 30, fill: this.mode === 'follow' ? '#1f5fa8' : '#6b4a2b', color: '#fff', stroke: '#ffffff' });
     p.update();
@@ -481,11 +496,11 @@ function followTick(dt) {
 }
 
 // 操作面板：三個分頁
-const ctl = new Panel(0.66, 0.282, 1100, 470);
+const ctl = new Panel(0.66, 0.42, 1100, 700);
 let ctlTab = 'main', levelDone = false, levelT = 0, lastCat = '';
 const CTL_TABS = [['main', '轉鏡頭・對焦'], ['screw', '腳螺旋'], ['help', '按鍵說明']];
 function setCtlTab(t) { ctlTab = t; if (ctlWin.collapsed) ctlWin.setCollapsed(false); ctlWin.drawBar(); drawCtl(); }
-const ctlWin = new Win(ctl, 0.66, 0.282, (p) => {
+const ctlWin = new Win(ctl, 0.66, 0.42, (p) => {
   CTL_TABS.forEach(([k, name], i) => {
     const on = ctlTab === k;
     p.btn(14 + i * 206, 14, 196, 100, name, () => setCtlTab(k), { size: 30, fill: on ? '#fbfaf6' : '#3f5266', color: on ? '#1f5fa8' : '#e8edf2', stroke: on ? '#fbfaf6' : '#6f8499' });
@@ -494,18 +509,41 @@ const ctlWin = new Win(ctl, 0.66, 0.282, (p) => {
 function drawCtl() {
   const p = ctl; p.bg('#f7f5ef');
   if (ctlTab === 'main') {
-    p.text('轉鏡頭', 24, 72, 30, '#2b2a27', 'left', '500');
-    p.btn(150, 30, 215, 86, '◀◀ 大轉', () => turnYaw(STEP.yawBig), { rep: true });
-    p.btn(375, 30, 215, 86, '◀ 微調', () => turnYaw(STEP.yawFine), { rep: true, fill: '#eef3fa' });
-    p.btn(600, 30, 215, 86, '微調 ▶', () => turnYaw(-STEP.yawFine), { rep: true, fill: '#eef3fa' });
-    p.btn(825, 30, 250, 86, '大轉 ▶▶', () => turnYaw(-STEP.yawBig), { rep: true });
-    p.text('對焦', 24, 182, 30, '#2b2a27', 'left', '500');
-    p.btn(150, 140, 455, 86, '◀ 看近一點', () => focusStep(-1), { rep: true });
-    p.btn(620, 140, 455, 86, '看遠一點 ▶', () => focusStep(1), { rep: true });
-    p.text('點一下 = 轉一小格　按住 = 連續轉', 24, 278, 26, '#8a5a00', 'left', '500');
-    p.text('需要重新調水平時，切到上方「腳螺旋」分頁。', 24, 322, 24, '#6b6860');
-    if (MODE === 'practice') p.btn(24, 368, 560, 80, labelAll ? '部位標籤：全部顯示（點我切換）' : '部位標籤：只顯示這一步（點我切換）', () => { labelAll = !labelAll; }, { size: 26, fill: labelAll ? '#fff8e0' : '#ffffff' });
-  } else if (ctlTab === 'screw') {
+    const prac = MODE === 'practice', pts = D.st[S.si].pts;
+    const st = prac ? steps[gi] : null, tgt = st && st.pt !== undefined ? st.pt : aimPt >= 0 ? aimPt : null;
+    p.text('轉鏡頭', 24, 34, 30, '#2b2a27', 'left', '500');
+    if (prac) p.text(`鏡頭方向 ${bearing(S.yaw).toFixed(2)}°`, 1076, 34, 30, '#1f5fa8', 'right', '500');
+    p.btn(24, 62, 252, 82, prac ? '◀◀ 大轉 1.5°' : '◀◀ 大轉', () => turnYaw(STEP.yawBig), { rep: true, size: 28 });
+    p.btn(286, 62, 252, 82, prac ? '◀ 微調 0.02°' : '◀ 微調', () => turnYaw(STEP.yawFine), { rep: true, fill: '#eef3fa', size: 28 });
+    p.btn(548, 62, 252, 82, prac ? '微調 0.02° ▶' : '微調 ▶', () => turnYaw(-STEP.yawFine), { rep: true, fill: '#eef3fa', size: 28 });
+    p.btn(810, 62, 266, 82, prac ? '大轉 1.5° ▶▶' : '大轉 ▶▶', () => turnYaw(-STEP.yawBig), { rep: true, size: 28 });
+    let y = 186;
+    if (prac) {
+      if (tgt != null) {
+        const d = angDiff(yawTo(tgt), S.yaw) / DEG, ok = aimPt === tgt;
+        p.text(`${NAMES[tgt]} 尺在 ${bearing(yawTo(tgt)).toFixed(2)}°，還差 ${Math.abs(d).toFixed(2)}°　${ok ? '對準了 ✓' : d > 0 ? '← 往左轉' : '往右轉 →'}`, 24, y, 26, ok ? '#2f7d32' : '#a86a00', 'left', '500');
+      }
+      p.text('一鍵對準', 24, y + 66, 26, '#2b2a27', 'left', '500');
+      pts.forEach((pt, i) => p.btn(160 + i * 230, y + 34, 218, 64, `${NAMES[pt]} 尺`, () => aimAt(pt), { size: 28, fill: tgt === pt ? '#fff8e0' : '#ffffff', stroke: tgt === pt ? '#c99a00' : '#9a968c' }));
+      y += 136;
+    }
+    p.text('對焦', 24, y, 30, '#2b2a27', 'left', '500');
+    if (prac) p.text(`對焦距離 ${Math.exp(S.lf).toFixed(1)} m`, 1076, y, 30, '#1f5fa8', 'right', '500');
+    p.btn(24, y + 28, 520, 82, prac ? '◀ 看近一點（−3.5%）' : '◀ 看近一點', () => focusStep(-1), { rep: true, size: 28 });
+    p.btn(556, y + 28, 520, 82, prac ? '看遠一點（+3.5%）▶' : '看遠一點 ▶', () => focusStep(1), { rep: true, size: 28 });
+    y += 150;
+    if (prac) {
+      if (tgt != null) p.text(`${NAMES[tgt]} 尺距離 ${trueRead(S.si, tgt).dist.toFixed(1)} m　畫面：${blurBias < 0.6 ? '清楚 ✓' : blurBias < 3 ? '有點模糊' : '很模糊'}`, 24, y, 26, blurBias < 0.6 ? '#2f7d32' : '#a86a00', 'left', '500');
+      p.text('一鍵對焦', 24, y + 66, 26, '#2b2a27', 'left', '500');
+      pts.forEach((pt, i) => p.btn(160 + i * 230, y + 34, 218, 64, `${NAMES[pt]}  ${trueRead(S.si, pt).dist.toFixed(1)} m`, () => focusTo(pt), { size: 26, fill: tgt === pt ? '#fff8e0' : '#ffffff', stroke: tgt === pt ? '#c99a00' : '#9a968c' }));
+      y += 130;
+      p.btn(24, y - 6, 600, 66, labelAll ? '部位標籤：全部顯示（點我切換）' : '部位標籤：只顯示這一步（點我切換）', () => { labelAll = !labelAll; }, { size: 24, fill: labelAll ? '#fff8e0' : '#ffffff' });
+      p.text('點一下 = 一小格　按住 = 連續', 1076, y + 28, 24, '#8a5a00', 'right', '500');
+    } else {
+      p.text('點一下 = 轉一小格　按住 = 連續轉', 24, y, 26, '#8a5a00', 'left', '500');
+      p.text('需要重新調水平時，切到上方「腳螺旋」分頁。', 24, y + 46, 24, '#6b6860');
+      p.text('實戰模式沒有一鍵對準、也不顯示角度和距離，跟真正考試一樣。', 24, y + 88, 24, '#6b6860');
+    }  } else if (ctlTab === 'screw') {
     p.text('轉腳螺旋，把氣泡調進小圓圈（調水平）', 24, 34, 28, '#2b2a27', 'left', '500');
     for (let k = 0; k < 3; k++) {
       const x0 = 24 + k * 354, col = SCREW_CSS[k], on = S.sel === k;
@@ -532,177 +570,374 @@ function drawCtl() {
   p.update();
 }
 
-// ═════════════ 記錄本資料 ═════════════
-const ROWS = [
-  { st: 0, pt: 0, kind: '後視' }, { st: 0, pt: 1, kind: '間視' }, { st: 0, pt: 2, kind: '間視' }, { st: 0, pt: 3, kind: '前視' },
-  { st: 1, pt: 3, kind: '後視' }, { st: 1, pt: 4, kind: '間視' }, { st: 1, pt: 5, kind: '間視' }, { st: 1, pt: 6, kind: '前視' }];
-const rowOf = (si, pt) => ROWS.findIndex(r => r.st === si && r.pt === pt);
-const COLS = ['上絲', '中絲', '下絲'];
-let entries, meta, sel, view = 'book';
-function resetBook() { entries = ROWS.map(() => ['', '', '']); meta = ROWS.map(() => [null, null, null]); sel = { r: 0, c: 0 }; view = 'book'; }
-resetBook();
-const fb = new Panel(0.80, 0.72, 1120, 1008);
-const fbWin = new Win(fb, 0.80, 0.72, (p) => p.text(MODE === 'menu' ? '選單' : MODE === 'practice' ? '練習引導' : view === 'book' ? '量測記錄表' : '評分結果', 28, 64, 40, '#ffffff', 'left', '500'));
-const fmt = s => s ? (s.padEnd(4, '_')[0] + '.' + s.padEnd(4, '_').slice(1)) : '';
-const val = s => s && s.length === 4 ? parseInt(s, 10) / 1000 : null;
-let aimPt = -1, blurBias = 0;
+// ═════════════ 記錄表（依官方「觀測記錄表」與「答案紙」格式） ═════════════
+// 考試只記中線讀數，共 8 個：每站第一把尺 = 後視、中間的 = 前視（中間點）、最後一把 = 前視（轉點）
+const READS = [
+  { key: 'bsA', si: 0, pt: 0, col: 'bs' }, { key: 'isB', si: 0, pt: 1, col: 'is' }, { key: 'isC', si: 0, pt: 2, col: 'is' }, { key: 'fsD', si: 0, pt: 3, col: 'fs' },
+  { key: 'bsD', si: 1, pt: 3, col: 'bs' }, { key: 'isE', si: 1, pt: 4, col: 'is' }, { key: 'isF', si: 1, pt: 5, col: 'is' }, { key: 'fsG', si: 1, pt: 6, col: 'fs' }];
+const readOf = (si, pt) => READS.find(r => r.si === si && r.pt === pt);
+const isRead = k => READS.some(r => r.key === k);
+const COL_NAME = { bs: '後視', is: '前視（中間點）', fs: '前視（轉點）' };
+const T1 = [
+  { p: 'A', bs: 'bsA', cbs: 'cbsA', hi: 'HI1', h: 'H_A' },
+  { p: 'B', is: 'isB', h: 'HB' }, { p: 'C', is: 'isC', h: 'HC' },
+  { p: 'D', bs: 'bsD', cbs: 'cbsD', hi: 'HI2', fs: 'fsD', cfs: 'cfsD', h: 'HD' },
+  { p: 'E', is: 'isE', h: 'HE' }, { p: 'F', is: 'isF', h: 'HF' },
+  { p: 'G', fs: 'fsG', cfs: 'cfsG', h: 'HGc' }];
+const T1_COLS = [['bs', '後視', 130], ['cbs', '後視改正', 120], ['hi', '視準軸高程', 160], ['is', '前視|中間點', 130], ['fs', '前視|轉點', 130], ['cfs', '轉點改正', 120], ['h', '高程', 160]];
+const TOPKEY = ['H_A', 'HB', 'HC', 'HD', 'HE', 'HF', 'HGc'];
+const CALC1 = ['W', 'cbsA', 'cfsD', 'cbsD', 'cfsG', 'HI1', 'HB', 'HC', 'HD', 'HI2', 'HE', 'HF', 'HGc'];
+const CALC2 = [...'BCDEFG'].map(p => 'Hd' + p).concat([...'ABCDEFG'].map(p => 'cut' + p));
+const SIGNED = k => /^(cbs|cfs|W$|d[A-G]$)/.test(k);
+function KEY_NAME(k) {
+  const fix = { W: '閉合差 W', HI1: 'P 站視準軸高程', HI2: 'Q 站視準軸高程', H_A: 'A 高程', HGc: 'G 高程（改正後）', cbsA: 'A 後視改正', cbsD: 'D 後視改正', cfsD: 'D 轉點改正', cfsG: 'G 轉點改正' };
+  if (fix[k]) return fix[k];
+  if (isRead(k)) return `${k[2]} 尺讀數（${COL_NAME[k.slice(0, 2)]}）`;
+  if (/^H[B-F]$/.test(k)) return `${k[1]} 高程`;
+  if (/^Hd/.test(k)) return `${k[2]} 設計高程`;
+  if (/^cut/.test(k)) return `${k[3]} 挖土深度`;
+  if (/^fill/.test(k)) return `${k[4]} 填土高度`;
+  if (/^d[A-G]$/.test(k)) return `${k[1]}：樁頂 − 設計`;
+  return k;
+}
+let vals = {}, disp = {}, meta2 = {}, cell = 'bsA', page = 1, phase = 'field', view = 'book', examT0 = 0, examEnd = null, endConfirm = 0, inp = '', inpMsg = '', inpMsgCol = '#2b2a27';
+function resetBook() {
+  vals = {}; disp = {}; meta2 = {}; cell = 'bsA'; page = 1; phase = 'field'; view = 'book';
+  examT0 = performance.now(); examEnd = null; endConfirm = 0; inp = ''; inpMsg = '';
+}
+const fmtV = (k, v) => (SIGNED(k) && v >= 0 ? '+' : '') + v.toFixed(3);
+function setVal(k, v) { vals[k] = v; disp[k] = fmtV(k, v); }
+function prefillKnown() { setVal('H_A', D.HA); setVal('HdA', r3(D.HpA)); }
+const designH = x => D.HpA + D.G1 / 100 * x + (D.G2 - D.G1) / 100 * x * x / (2 * D.L);
+const near = (a, b) => isFinite(a) && isFinite(b) && Math.abs(a - b) < 0.0005 + 1e-9;
+// 由 8 個讀數算出所有應填的值（作法同官方範例：−W 依序分配給 A後視、D前視、D後視、G前視）
+function solve(v) {
+  if (!READS.every(q => isFinite(v[q.key]))) return null;
+  const r = {};
+  r.sumB = v.bsA + v.bsD; r.sumF = v.fsD + v.fsG;
+  r.W = r3(D.HA + r.sumB - r.sumF - D.HG);
+  const tot = Math.round(-r.W * 1000), cum = k => Math.sign(tot) * Math.round(Math.abs(tot) * k / 4 + 1e-9);
+  [r.cbsA, r.cfsD, r.cbsD, r.cfsG] = [1, 2, 3, 4].map(k => (cum(k) - cum(k - 1)) / 1000);
+  r.H_A = D.HA;
+  r.HI1 = r3(D.HA + v.bsA + r.cbsA);
+  r.HB = r3(r.HI1 - v.isB); r.HC = r3(r.HI1 - v.isC); r.HD = r3(r.HI1 - v.fsD + r.cfsD);
+  r.HI2 = r3(r.HD + v.bsD + r.cbsD);
+  r.HE = r3(r.HI2 - v.isE); r.HF = r3(r.HI2 - v.isF); r.HGc = r3(r.HI2 - v.fsG + r.cfsG);
+  [...NAMES].forEach((p, i) => {
+    const hd = r3(designH(i * 20)); r['Hd' + p] = hd;
+    const d = r3(r[TOPKEY[i]] - hd); r['d' + p] = d;
+    r['cut' + p] = d >= 0 ? d : null; r['fill' + p] = d < 0 ? r3(-d) : null;
+  });
+  return r;
+}
+const g100 = g => +(g / 100).toFixed(5);
+function formulaOf(k, v, r) {
+  const f = x => x.toFixed(3), s = x => (x >= 0 ? '+ ' : '− ') + Math.abs(x).toFixed(3);
+  if (k === 'W') return `W = (${f(D.HA)} + ${f(v.bsA)} + ${f(v.bsD)} − ${f(v.fsD)} − ${f(v.fsG)}) − ${f(D.HG)} = ${fmtV('W', r.W)}`;
+  if (/^c(bs|fs)/.test(k)) { const tot = Math.round(-r.W * 1000); return `−W = ${tot} mm，分成 4 份（A後視、D前視、D後視、G前視）= ${[r.cbsA, r.cfsD, r.cbsD, r.cfsG].map(x => Math.round(x * 1000)).join('、')} mm → 這格 = ${fmtV(k, r[k])}`; }
+  if (k === 'HI1') return `${f(D.HA)} + ${f(v.bsA)} ${s(r.cbsA)} = ${f(r.HI1)}`;
+  if (k === 'HB' || k === 'HC') return `${f(r.HI1)} − ${f(v['is' + k[1]])} = ${f(r[k])}`;
+  if (k === 'HD') return `${f(r.HI1)} − ${f(v.fsD)} ${s(r.cfsD)} = ${f(r.HD)}`;
+  if (k === 'HI2') return `${f(r.HD)} + ${f(v.bsD)} ${s(r.cbsD)} = ${f(r.HI2)}`;
+  if (k === 'HE' || k === 'HF') return `${f(r.HI2)} − ${f(v['is' + k[1]])} = ${f(r[k])}`;
+  if (k === 'HGc') return `${f(r.HI2)} − ${f(v.fsG)} ${s(r.cfsG)} = ${f(r.HGc)}（題目給的 G = ${f(D.HG)}）`;
+  if (/^Hd/.test(k)) { const x = NAMES.indexOf(k[2]) * 20; return `${f(D.HpA)} + ${g100(D.G1)}×${x} + (${g100(D.G2)} − ${g100(D.G1)})×${x}² ÷ (2×${D.L}) = ${f(r[k])}`; }
+  if (/^d[A-G]$/.test(k)) { const i = NAMES.indexOf(k[1]); return `${f(r[TOPKEY[i]])} − ${f(r['Hd' + k[1]])} = ${fmtV(k, r[k])}（${r[k] > 0 ? '正 → 挖土' : r[k] < 0 ? '負 → 填土' : '剛好'}）`; }
+  return '';
+}
 
+// ═════════════ 數字鍵盤（可以直接輸入算式，當計算機用） ═════════════
+const PAD = [['7', '8', '9', '÷'], ['4', '5', '6', '×'], ['1', '2', '3', '−'], ['0', '.', '⌫', '+'], ['清除', '(', ')', 'ok']];
+function evalInp(s, read4) {
+  if (!s) return NaN;
+  if (read4 && /^\d{4}$/.test(s)) return parseInt(s, 10) / 1000;
+  const e = s.replace(/×/g, '*').replace(/÷/g, '/').replace(/−/g, '-');
+  if (!/^[0-9+\-*/(). ]+$/.test(e)) return NaN;
+  try { const v = Function('"use strict";return (' + e + ')')(); return typeof v === 'number' && isFinite(v) ? v : NaN; } catch (_) { return NaN; }
+}
+function padKey(k) {
+  if (k === '⌫' || k === 'back') inp = inp.slice(0, -1);
+  else if (k === '清除' || k === 'clear') inp = '';
+  else if (inp.length < 40) inp += k;
+  inpMsg = '';
+}
+function drawPad(p, x0, y0, w, h, onKey, okLabel = '確認') {
+  const cw = (w - 30) / 4, ch = (h - 40) / 5;
+  PAD.forEach((row, r) => row.forEach((k, c) => {
+    const ok = k === 'ok', op = /[÷×−+()]/.test(k);
+    p.btn(x0 + c * (cw + 10), y0 + r * (ch + 10), cw, ch, ok ? okLabel : k, () => onKey(k),
+      { size: ok ? 30 : k === '清除' ? 28 : 38, fill: ok ? '#1f5fa8' : op ? '#eef3fa' : '#ffffff', color: ok ? '#fff' : '#2b2a27', stroke: ok ? '#1f5fa8' : '#9a968c' });
+  }));
+}
+function drawInpBox(p, x0, y0, w, label, read4) {
+  p.rect(x0, y0, w, 124, '#ffffff', '#1f5fa8', 3);
+  p.text(label, x0 + 16, y0 + 26, 25, '#1f5fa8', 'left', '500');
+  const shown = inp.length > 22 ? '…' + inp.slice(-22) : inp;
+  p.text(shown || '用右邊鍵盤輸入（也可以打算式）', x0 + 16, y0 + 74, inp ? 40 : 22, inp ? '#111' : '#9a968c', 'left', '500');
+  const v = evalInp(inp, read4);
+  if (inp && isFinite(v) && !/^\d*\.?\d*$/.test(inp)) p.text('= ' + v.toFixed(3), x0 + w - 16, y0 + 106, 26, '#2f7d32', 'right', '500');
+  else if (inp && read4 && /^\d{4}$/.test(inp)) p.text('= ' + v.toFixed(3) + ' m', x0 + w - 16, y0 + 106, 26, '#2f7d32', 'right', '500');
+}
+
+// ═════════════ 表格繪製（考試與練習共用） ═════════════
+// editable(k) 回傳 true 的格子可以點選；hl = 要標亮的格子
+function drawT1(p, x0, y0, editable, hl) {
+  const RH = 50, xs = [x0, x0 + 70]; T1_COLS.forEach(c => xs.push(xs[xs.length - 1] + c[2]));
+  p.rect(x0, y0, xs[8] - x0, 60, '#e9e6dc', '#cfcabd');
+  p.text('點號', x0 + 35, y0 + 30, 22, '#4a4740', 'center', '500');
+  T1_COLS.forEach((c, i) => {
+    const [a, b] = c[1].split('|'), cx = (xs[i + 1] + xs[i + 2]) / 2;
+    if (b) { p.text(a, cx, y0 + 18, 20, '#4a4740', 'center', '500'); p.text(b, cx, y0 + 42, 20, '#4a4740', 'center', '500'); }
+    else p.text(a, cx, y0 + 30, 22, '#4a4740', 'center', '500');
+  });
+  T1.forEach((row, r) => {
+    const y = y0 + 60 + r * RH;
+    p.rect(x0, y, 70, RH, '#ffffff', '#d5d1c6', 1); p.text(row.p, x0 + 35, y + RH / 2, 28, '#2b2a27', 'center', '500');
+    T1_COLS.forEach((c, i) => cellBox(p, row[c[0]], xs[i + 1], y, c[2], RH, editable, hl));
+  });
+  const yW = y0 + 60 + 7 * RH;
+  p.rect(x0, yW, xs[7] - x0, RH, '#f4f2ec', '#d5d1c6', 1);
+  p.text('閉合差 W = (HA + Σ後視 − Σ前視（轉點）) − HG', x0 + 14, yW + RH / 2, 22, '#4a4740');
+  cellBox(p, 'W', xs[7], yW, T1_COLS[6][2], RH, editable, hl);
+  return yW + RH;
+}
+function drawT2(p, x0, y0, editable, hl) {
+  const RH = 50, cols = [['樁號', 80], ['距 A', 90], ['樁頂高程', 180], ['設計高程', 180], ['挖土深度', 180], ['填土高度', 180]];
+  const xs = [x0]; cols.forEach(c => xs.push(xs[xs.length - 1] + c[1]));
+  p.rect(x0, y0, xs[6] - x0, 56, '#e9e6dc', '#cfcabd');
+  cols.forEach((c, i) => p.text(c[0], (xs[i] + xs[i + 1]) / 2, y0 + 28, 22, '#4a4740', 'center', '500'));
+  [...NAMES].forEach((pt, i) => {
+    const y = y0 + 56 + i * RH;
+    p.rect(xs[0], y, cols[0][1], RH, '#ffffff', '#d5d1c6', 1); p.text(pt, (xs[0] + xs[1]) / 2, y + RH / 2, 28, '#2b2a27', 'center', '500');
+    p.rect(xs[1], y, cols[1][1], RH, '#ffffff', '#d5d1c6', 1); p.text(`${i * 20} m`, (xs[1] + xs[2]) / 2, y + RH / 2, 22, '#4a4740', 'center');
+    p.rect(xs[2], y, cols[2][1], RH, '#f4f2ec', '#d5d1c6', 1); p.text(disp[TOPKEY[i]] || '—', (xs[2] + xs[3]) / 2, y + RH / 2, 26, '#4a4740', 'center');
+    cellBox(p, 'Hd' + pt, xs[3], y, cols[3][1], RH, editable, hl);
+    cellBox(p, 'cut' + pt, xs[4], y, cols[4][1], RH, editable, hl);
+    cellBox(p, 'fill' + pt, xs[5], y, cols[5][1], RH, editable, hl);
+  });
+  return y0 + 56 + 7 * RH;
+}
+function cellBox(p, k, x, y, w, h, editable, hl) {
+  if (!k) { p.rect(x, y, w, h, '#ebe8df', '#d5d1c6', 1); return; }
+  const can = editable && editable(k), on = hl === k;
+  p.rect(x, y, w, h, on ? '#ffe28a' : can ? '#ffffff' : '#f4f2ec', on ? '#c99a00' : '#d5d1c6', on ? 3 : 1);
+  if (disp[k] != null) p.text(disp[k], x + w / 2, y + h / 2 + 1, 26, can || on ? '#111' : '#4a4740', 'center');
+  if (can) p.regions.push({ x, y, w, h, fn: () => { cell = k; inp = ''; inpMsg = ''; drawFB(); } });
+}
+
+// ═════════════ 面板主程式 ═════════════
+const fb = new Panel(0.80, 0.72, 1120, 1008);
+const fbWin = new Win(fb, 0.80, 0.72, (p) => p.text(MODE === 'menu' ? '選單' : MODE === 'practice' ? '練習引導' : view === 'result' ? '評分結果' : phase === 'field' ? '外業：觀測記錄表' : '內業：計算與答案紙', 28, 64, 40, '#ffffff', 'left', '500'));
+let aimPt = -1, blurBias = 0;
 function drawFB() {
   if (MODE === 'menu') drawMenu();
   else if (MODE === 'practice') drawGuide();
-  else { fb.bg(); if (view === 'book') drawBook(); else drawResults(); }
+  else drawExam();
   fb.update();
-  const key = MODE + view; if (fbWin.lastKey !== key) { fbWin.lastKey = key; fbWin.drawBar(); }
+  const key = MODE + view + phase; if (fbWin.lastKey !== key) { fbWin.lastKey = key; fbWin.drawBar(); }
 }
 function drawMenu() {
   const p = fb; p.bg();
   p.text('水準測量 VR 練習（試題九）', 560, 80, 44, '#2b2a27', 'center', '500');
-  p.wrap('在虛擬場地上操作水準儀：把儀器調水平、對準遠處的尺、讀出數字，最後算出每支木樁的高度。', 70, 160, 980, 30, '#4a4740');
-  p.btn(70, 280, 980, 230, '', () => startMode('practice'), { fill: '#eef3fa', stroke: '#1f5fa8', lw: 4 });
-  p.text('練習模式', 560, 345, 46, '#1f5fa8', 'center', '500');
-  p.text('一步一步帶你做，標出每個部位，讀錯會提示', 560, 410, 30, '#2b2a27', 'center');
-  p.text('（第一次用請選這個）', 560, 460, 26, '#6b6860', 'center');
-  p.btn(70, 560, 980, 200, '', () => startMode('exam'), { lw: 3 });
-  p.text('實戰模式', 560, 620, 46, '#2b2a27', 'center', '500');
-  p.text('照考試流程自己做，不提示，最後一次評分', 560, 685, 30, '#4a4740', 'center');
-  p.wrap('操作方式：用手把的射線指著按鈕，按板機。右邊有「操作面板」，前方是望遠鏡畫面。', 70, 830, 980, 26, '#6b6860');
+  p.wrap('在虛擬場地上操作水準儀、讀尺、填記錄表，再算出高程、設計高程和挖填土深度。流程和表格都跟真正的考試一樣。', 70, 150, 980, 28, '#4a4740');
+  p.btn(70, 270, 980, 240, '', () => startMode('practice'), { fill: '#eef3fa', stroke: '#1f5fa8', lw: 4 });
+  p.text('練習模式', 560, 335, 46, '#1f5fa8', 'center', '500');
+  p.text('一步一步帶你做完外業和計算，每一格都有說明', 560, 400, 30, '#2b2a27', 'center');
+  p.text('（第一次用請選這個，可以隨時上一步／跳過）', 560, 452, 26, '#6b6860', 'center');
+  p.btn(70, 560, 980, 210, '', () => startMode('exam'), { lw: 3 });
+  p.text('實戰模式', 560, 622, 46, '#2b2a27', 'center', '500');
+  p.text('照考試規定：不能走動、沒有提示、限時 60 分鐘', 560, 688, 30, '#4a4740', 'center');
+  p.text('最後依官方評審表評分', 560, 732, 26, '#6b6860', 'center');
+  p.wrap('操作：用手把射線指著按鈕按板機（電腦用滑鼠點）。右邊是操作面板，前方是望遠鏡畫面。', 70, 830, 980, 26, '#6b6860');
 }
 
-// ═════════════ 實戰模式：記錄本 ═════════════
-function pressExam(k) {
-  if (view !== 'book') return;
-  const { r, c } = sel; let s = entries[r][c];
-  if (k === 'back') s = s.slice(0, -1); else if (k === 'clear') s = ''; else if (s.length < 4) s += k;
-  entries[r][c] = s; meta[r][c] = null;
-  if (s.length === 4) { meta[r][c] = { aim: aimPt, tilt: G.length() > COMP_RANGE, blur: blurBias > 1.6, st: S.si }; nextCell(); }
+// ═════════════ 實戰模式 ═════════════
+const examTime = () => ((examEnd || performance.now()) - examT0) / 1000;
+const mmss = t => `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+function examEditable(k) {
+  if (view !== 'book') return false;
+  if (phase === 'field') return isRead(k);
+  return !isRead(k) && k !== 'H_A' && k !== 'HdA';
+}
+function nextCellKey(k) {
+  if (phase === 'field') { const i = READS.findIndex(q => q.key === k); return READS[Math.min(i + 1, 7)].key; }
+  const kk = /^fill/.test(k) ? 'cut' + k[4] : k;
+  let i = CALC1.indexOf(kk);
+  if (i >= 0) { if (i < CALC1.length - 1) return CALC1[i + 1]; page = 2; return CALC2[0]; }
+  i = CALC2.indexOf(kk); return CALC2[Math.min(i + 1, CALC2.length - 1)];
+}
+function examKey(k) {
+  if (k === 'ok') return commitCell();
+  padKey(k); drawFB();
+}
+function commitCell() {
+  if (inp !== '') {
+    const v = evalInp(inp, isRead(cell));
+    if (!isFinite(v)) { inpMsg = '看不懂這個數字或算式，請重新輸入'; inpMsgCol = '#c0281e'; drawFB(); return; }
+    setVal(cell, r3(v));
+    if (isRead(cell)) meta2[cell] = { aim: aimPt, tilt: G.length() > LEVEL_OK, blur: blurBias > 1.6, st: S.si };
+    if (/^cut/.test(cell)) { delete vals['fill' + cell[3]]; delete disp['fill' + cell[3]]; }
+    if (/^fill/.test(cell)) { delete vals['cut' + cell[4]]; delete disp['cut' + cell[4]]; }
+  }
+  inp = ''; inpMsg = ''; cell = nextCellKey(cell); drawFB();
+}
+function toCalc() {
+  phase = 'calc'; page = 1; cell = 'W'; inp = ''; endConfirm = 0; prefillKnown();
+  ctlWin.g.visible = telPanel.visible = bub.mesh.visible = false;      // 進入計算後不能再用儀器
   drawFB();
 }
-function nextCell() { if (sel.c < 2) sel.c++; else if (sel.r < 7) { sel.r++; sel.c = 0; } }
-function drawBook() {
-  const p = fb;
-  p.text('實戰模式　水準測量記錄', 20, 38, 32, '#2b2a27', 'left', '500');
-  p.text(`目前測站：${D.st[S.si].name}`, 690, 38, 28, '#1f5fa8', 'right', '500');
-  const cx = [20, 100, 160, 255, 400, 545, 690];
-  ['測站', '點', '種類', '上線', '中線', '下線'].forEach((h, i) => p.text(h, (cx[i] + cx[i + 1]) / 2, 100, 24, '#6b6860', 'center'));
-  ROWS.forEach((row, r) => {
-    const y = 125 + r * 56, here = row.st === S.si;
-    p.rect(20, y, 670, 52, here ? '#ffffff' : '#efede6', '#d5d1c6');
-    p.text(D.st[row.st].name, 60, y + 27, 26, '#2b2a27', 'center');
-    p.text(NAMES[row.pt], 130, y + 27, 28, '#2b2a27', 'center', '500');
-    p.text(row.kind, 207, y + 27, 24, row.kind === '後視' ? '#1f5fa8' : row.kind === '前視' ? '#a83a1f' : '#4a4740', 'center');
-    for (let c = 0; c < 3; c++) {
-      const on = sel.r === r && sel.c === c, x0 = cx[3 + c] + 4;
-      p.rect(x0, y + 5, 137, 42, on ? '#ffe28a' : '#fff', on ? '#c99a00' : '#ddd');
-      p.text(fmt(entries[r][c]), x0 + 68, y + 27, 28, '#111', 'center');
-      p.regions.push({ x: x0, y: y + 5, w: 137, h: 42, fn: () => { sel = { r, c }; drawFB(); } });
-    }
-  });
-  const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'back'], lab = { clear: '清除', back: '⌫' };
-  keys.forEach((k, i) => p.btn(720 + (i % 3) * 126, 125 + Math.floor(i / 3) * 90, 116, 80, lab[k] || k, () => pressExam(k), { size: 36 }));
-  p.btn(720, 490, 368, 70, '下一格 ▶', () => { nextCell(); drawFB(); }, { size: 28 });
-  p.text(`已知：A 的高度 = ${D.HA.toFixed(3)} m　G 的高度 = ${D.HG.toFixed(3)} m`, 20, 612, 26, '#2b2a27', 'left', '500');
-  p.text('讀數輸入 4 位數字，例如 1437 代表 1.437 m。', 20, 655, 24, '#4a4740');
-  p.text('P 站量 A、B、C、D；Q 站量 D、E、F、G。', 20, 693, 24, '#4a4740');
-  p.text('後視 = 這一站的起點　間視 = 中間點　前視 = 接力點／終點', 20, 731, 24, '#4a4740');
-  p.text('上線、中線、下線 = 望遠鏡裡的三條橫線（課本叫上絲、中絲、下絲）', 20, 769, 24, '#4a4740');
-  const other = 1 - S.si;
-  p.btn(20, 880, 260, 92, `移到 ${D.st[other].name} 站`, () => { placeStation(other); sel = { r: other * 4, c: 0 }; drawFB(); }, { fill: '#eef3fa', color: '#1f5fa8', stroke: '#1f5fa8' });
-  p.btn(295, 880, 300, 92, '結束・評分', () => { view = 'result'; drawFB(); }, { fill: '#1f5fa8', color: '#fff', stroke: '#1f5fa8' });
-  p.btn(610, 880, 230, 92, '重新出題', () => startMode('exam'), { size: 28 });
-  p.btn(855, 880, 235, 92, '回選單', () => startMode('menu'), { size: 28 });
-}
-function heightsFrom(mids) {
-  const hiP = D.HA + mids[0], HD = hiP - mids[3], hiQ = HD + mids[4], HGc = hiQ - mids[7], w = HGc - D.HG;
-  const raw = { 1: hiP - mids[1], 2: hiP - mids[2], 3: HD, 4: hiQ - mids[5], 5: hiQ - mids[6] };
-  const corr = { 1: -w / 2, 2: -w / 2, 3: -w / 2, 4: -w, 5: -w };
-  return { hiP, HD, hiQ, HGc, w, raw, corr };
-}
-function drawResults() {
-  const p = fb;
-  p.text('評分結果（與場地真值比對）', 20, 36, 32, '#2b2a27', 'left', '500');
-  const hx = [20, 130, 250, 370, 470, 610, 790];
-  ['點', '你的中線', '正確', '誤差', '上下線檢核', '距離 你/實際', '備註'].forEach((h, i) => p.text(h, hx[i] + 4, 86, 22, '#6b6860'));
-  let good = 0;
-  ROWS.forEach((row, r) => {
-    const y = 108 + r * 50, t = trueRead(row.st, row.pt);
-    const [u, m, l] = entries[r].map(val);
-    p.rect(20, y, 1080, 46, r % 2 ? '#f4f2ec' : '#ffffff');
-    p.text(`${D.st[row.st].name}→${NAMES[row.pt]}`, hx[0] + 6, y + 24, 24);
-    p.text(m == null ? '—' : m.toFixed(3), hx[1] + 6, y + 24, 24);
-    p.text(t.mid.toFixed(3), hx[2] + 6, y + 24, 24, '#4a4740');
-    if (m != null) {
-      const e = Math.round((m - t.mid) * 1000), a = Math.abs(e);
-      if (a <= 2) good++;
-      p.text(`${e > 0 ? '+' : ''}${e} mm`, hx[3] + 6, y + 24, 24, a <= 2 ? '#2f7d32' : a <= 5 ? '#a86a00' : '#c0281e', 'left', '500');
-    }
-    if (u != null && l != null && m != null) {
-      const ck = Math.round(((u + l) / 2 - m) * 1000);
-      p.text(`${ck > 0 ? '+' : ''}${ck} mm`, hx[4] + 6, y + 24, 24, Math.abs(ck) <= 3 ? '#2f7d32' : '#c0281e');
-      p.text(`${((u - l) * 100).toFixed(1)} / ${t.dist.toFixed(1)}`, hx[5] + 6, y + 24, 24);
-    }
-    const notes = [], mt = meta[r][1];
-    if (mt) {
-      if (mt.st !== row.st) notes.push(`在 ${D.st[mt.st].name} 站讀的`);
-      if (mt.aim !== row.pt) notes.push(mt.aim < 0 ? '十字線沒對到尺' : `對到的是 ${NAMES[mt.aim]} 尺`);
-      if (mt.tilt) notes.push('沒調水平');
-      if (mt.blur) notes.push('沒對焦');
-    }
-    p.text(notes.join('、'), hx[6] + 6, y + 24, 22, '#c0281e');
-  });
-  p.text(`中線 8 個讀數中，誤差 ≤ 2 mm 的有 ${good} 個。`, 20, 532, 26, '#2b2a27', 'left', '500');
-  const mids = entries.map(e => val(e[1]));
-  if (mids.some(v => v == null)) p.text('中線還沒填完，無法計算高度。', 20, 590, 26, '#a86a00');
-  else {
-    const h = heightsFrom(mids);
-    p.text(`算出 G = ${h.HGc.toFixed(3)}，題目給 G = ${D.HG.toFixed(3)}，差（閉合差）= ${(h.w * 1000).toFixed(0)} mm`, 20, 580, 24);
-    ['點', '改正前', '改正後', '真值', '誤差'].forEach((t, i) => p.text(t, 20 + i * 170 + 4, 624, 22, '#6b6860'));
-    [1, 2, 3, 4, 5].forEach((i, k) => {
-      const y = 642 + k * 40, h2 = h.raw[i] + h.corr[i], e = Math.round((h2 - D.H[i]) * 1000);
-      p.text(NAMES[i], 24, y + 18, 24); p.text(h.raw[i].toFixed(3), 194, y + 18, 24); p.text(h2.toFixed(3), 364, y + 18, 24);
-      p.text(D.H[i].toFixed(3), 534, y + 18, 24, '#4a4740');
-      p.text(`${e > 0 ? '+' : ''}${e} mm`, 704, y + 18, 24, Math.abs(e) <= 3 ? '#2f7d32' : '#c0281e', 'left', '500');
-    });
-    p.text('（改正分配方式僅供參考，正式算法以老師網站／官方評審表為準）', 20, 858, 20, '#8a8780');
+function drawExam() {
+  const p = fb; p.bg();
+  const t = examTime(), over = t > 3600;
+  p.text(`考試時間 ${mmss(t)} / 60:00`, 1100, 36, 26, over ? '#c0281e' : '#4a4740', 'right', '500');
+  if (view === 'result') return drawResults(p);
+  if (phase === 'field') {
+    p.text(`目前在 ${D.st[S.si].name} 站`, 20, 36, 28, '#1f5fa8', 'left', '500');
+    drawT1(p, 20, 70, examEditable, cell);
+    drawInpBox(p, 20, 560, 580, '輸入：' + KEY_NAME(cell), true);
+    p.text(inpMsg || '讀數可打 4 位數：1437 = 1.437 m', 20, 708, 23, inpMsg ? inpMsgCol : '#6b6860');
+    p.text('P 站：A 後視 → B、C 中間點 → D 轉點', 20, 744, 22, '#6b6860');
+    p.text('Q 站：D 後視 → E、F 中間點 → G 轉點', 20, 776, 22, '#6b6860');
+    const other = 1 - S.si;
+    p.btn(20, 815, 285, 82, `搬到 ${D.st[other].name} 站`, () => { placeStation(other); cell = other ? 'bsD' : 'bsA'; drawFB(); }, { size: 28, fill: '#eef3fa', color: '#1f5fa8', stroke: '#1f5fa8' });
+    p.btn(315, 815, 285, 82, endConfirm > 0 ? '再按一次確認' : '結束外業 → 計算', () => { if (endConfirm > 0) toCalc(); else { endConfirm = 3; drawFB(); } },
+      { size: 26, fill: endConfirm > 0 ? '#c0281e' : '#1f5fa8', color: '#fff', stroke: endConfirm > 0 ? '#c0281e' : '#1f5fa8' });
+    p.btn(20, 910, 285, 80, '重新出題', () => startMode('exam'), { size: 26 });
+    p.btn(315, 910, 285, 80, '回選單', () => startMode('menu'), { size: 26 });
+    drawPad(p, 620, 560, 480, 430, examKey);
+  } else {
+    const tab = (x, n, label) => p.btn(x, 8, 230, 52, label, () => { page = n; drawFB(); }, { size: 24, fill: page === n ? '#1f5fa8' : '#ffffff', color: page === n ? '#fff' : '#2b2a27', stroke: '#1f5fa8' });
+    tab(20, 1, '1. 水準測量'); tab(260, 2, '2. 挖填土深度');
+    if (page === 1) drawT1(p, 20, 70, examEditable, cell); else drawT2(p, 20, 70, examEditable, cell);
+    drawInpBox(p, 20, 560, 580, '輸入：' + KEY_NAME(cell), false);
+    p.text(inpMsg || '可以直接打算式，例如 101.032−1.020', 20, 708, 22, inpMsg ? inpMsgCol : '#6b6860');
+    p.text(`已知：HA = ${D.HA.toFixed(3)}　HG = ${D.HG.toFixed(3)}　A 設計高程 = ${D.HpA.toFixed(3)}`, 20, 744, 22, '#2b2a27');
+    p.text(`G1 = ${D.G1 > 0 ? '+' : ''}${D.G1}%　G2 = ${D.G2 > 0 ? '+' : ''}${D.G2}%　L = ${D.L} m　樁距 20 m`, 20, 776, 22, '#2b2a27');
+    p.btn(20, 815, 580, 82, endConfirm > 0 ? '再按一次確認交卷' : '交卷・評分', () => { if (endConfirm > 0) { view = 'result'; examEnd = performance.now(); endConfirm = 0; drawFB(); } else { endConfirm = 3; drawFB(); } },
+      { size: 30, fill: endConfirm > 0 ? '#c0281e' : '#1f5fa8', color: '#fff', stroke: endConfirm > 0 ? '#c0281e' : '#1f5fa8' });
+    p.btn(20, 910, 285, 80, '重新出題', () => startMode('exam'), { size: 26 });
+    p.btn(315, 910, 285, 80, '回選單', () => startMode('menu'), { size: 26 });
+    drawPad(p, 620, 560, 480, 430, examKey);
   }
-  p.btn(20, 900, 340, 90, '回到記錄本', () => { view = 'book'; drawFB(); }, { size: 28 });
+}
+// 依官方評審表評分（m = 讀數當時的儀器狀態；練習模式傳 null）
+function scoreAll(v, m, timeOver) {
+  const r = solve(v) || {}, it = [];
+  const allRead = READS.every(q => isFinite(v[q.key]));
+  const okInst = !m || READS.every(q => m[q.key] && !m[q.key].tilt && m[q.key].aim === q.pt && m[q.key].st === q.si);
+  it.push(['使用儀器是否適當及熟練', 3, allRead && okInst ? 3 : 0, !allRead ? '讀數沒有填完' : okInst ? '每個讀數都是在調好水平、對準正確的尺時讀的' :
+    '有讀數不是在調好水平、對準正確的尺時讀的：' + READS.filter(q => !(m[q.key] && !m[q.key].tilt && m[q.key].aim === q.pt && m[q.key].st === q.si)).map(q => KEY_NAME(q.key)).join('、')]);
+  const hiOk = allRead && near(v.HI1, r.HI1) && near(v.HI2, r.HI2);
+  it.push(['手簿記錄及計算是否正確', 2, hiOk ? 2 : 0, !allRead ? '讀數沒有填完' : hiOk ? '讀數完整、視準軸高程正確' : `視準軸高程有誤或未填（應為 ${r.HI1 != null ? r.HI1.toFixed(3) : '?'}、${r.HI2 != null ? r.HI2.toFixed(3) : '?'}）`]);
+  const corrOk = allRead && near(v.W, r.W) && ['cbsA', 'cfsD', 'cbsD', 'cfsG'].every(k => near(v[k], r[k]));
+  let s3 = 0; const d3 = [];
+  [...'BCDEF'].forEach((p, j) => {
+    const u = v['H' + p]; if (!corrOk || !isFinite(u)) { d3.push(`${p} —`); return; }
+    const e = Math.round(Math.abs(u - D.H[j + 1]) * 1000), g = e <= 5 ? 6 : e <= 8 ? 4 : e <= 11 ? 2 : 0; s3 += g; d3.push(`${p} 差${e}mm→${g}`);
+  });
+  it.push(['B~F 樁頂高程', 30, s3, (corrOk ? '' : `【閉合差或改正數沒算對，本項 0 分。W 應為 ${r.W != null ? fmtV('W', r.W) : '?'}】`) + d3.join('，')]);
+  let s4 = 0; const d4 = [];
+  [...'BCDEFG'].forEach(p => {
+    const u = v['Hd' + p]; if (!isFinite(u)) { d4.push(`${p} —`); return; }
+    const e = Math.round(Math.abs(u - designH(NAMES.indexOf(p) * 20)) * 1000), g = e <= 3 ? 5 : 0; s4 += g; d4.push(`${p} 差${e}mm→${g}`);
+  });
+  it.push(['B~G 設計高程', 30, s4, d4.join('，')]);
+  let s5 = 0; const d5 = [];
+  [...NAMES].forEach((p, i) => {
+    const c = v['cut' + p], f = v['fill' + p];
+    if (!isFinite(c) && !isFinite(f)) { d5.push(`${p} —`); return; }
+    const u = (isFinite(c) ? c : 0) - (isFinite(f) ? f : 0), top = i === 0 ? D.HA : i === 6 ? D.HG : D.H[i];
+    const e = Math.round(Math.abs(u - (top - designH(i * 20))) * 1000), g = e <= 5 ? 5 : e <= 8 ? 3 : e <= 11 ? 1 : 0; s5 += g; d5.push(`${p} 差${e}mm→${g}`);
+  });
+  it.push(['A~G 挖填土深度', 35, s5, d5.join('，')]);
+  let total = it.reduce((a, x) => a + x[2], 0);
+  if (timeOver) total = 0;
+  return { it, total };
+}
+function drawResults(p) {
+  const over = examTime() > 3600, sc = scoreAll(vals, meta2, over);
+  p.text(`總分 ${sc.total} / 100　${sc.total >= 60 ? '及格 ✓' : '不及格'}`, 20, 36, 32, sc.total >= 60 ? '#2f7d32' : '#c0281e', 'left', '500');
+  let y = 90;
+  sc.it.forEach(([name, max, got, det]) => {
+    p.text(name, 20, y + 4, 27, '#2b2a27', 'left', '500');
+    p.text(`${got} / ${max}`, 1100, y + 4, 27, got === max ? '#2f7d32' : got > 0 ? '#a86a00' : '#c0281e', 'right', '500');
+    y = p.wrap(det, 36, y + 44, 1060, 22, '#4a4740', 1.4) + 14;
+  });
+  p.text(over ? '使用時間超過 60 分鐘，依規定總分以零分計。' : `使用時間 ${mmss(examTime())}（規定 60 分鐘內）`, 20, y + 10, 24, over ? '#c0281e' : '#4a4740');
+  p.text('（評分方式依官方評審表；改正數分配法同官方答案紙範例）', 20, y + 50, 20, '#8a8780');
+  p.btn(20, 900, 340, 90, '回到記錄表', () => { view = 'book'; drawFB(); }, { size: 28 });
   p.btn(380, 900, 340, 90, '重新出題', () => startMode('exam'), { size: 28 });
   p.btn(740, 900, 350, 90, '回選單', () => startMode('menu'), { size: 28 });
 }
 
 // ═════════════ 練習模式：步驟引導 ═════════════
-const WIRE = [{ c: 1, k: 'mid', name: '中線', where: '中間那條長橫線' }, { c: 0, k: 'up', name: '上線', where: '上面那條短橫線' }, { c: 2, k: 'low', name: '下線', where: '下面那條短橫線' }];
 const ROLE_TEXT = {
-  start: 'A 是起點，它的高度題目已經告訴你了。量它是為了知道「儀器的視線有多高」。（課本叫「後視」）',
-  mid: '這是中間點，量它是為了算出它的高度。（課本叫「間視」）',
-  relay: 'D 是接力點：在 P 站量一次，搬到 Q 站還要再量一次，高度才能接力傳下去。（課本叫「前視」）',
-  relayQ: '在 Q 站，D 變成這一站的起點。剛剛已經算出 D 的高度，現在用它來知道 Q 站的視線有多高。（課本叫「後視」）',
-  end: 'G 是終點，題目也給了 G 的高度，最後用來檢查你量得準不準。（課本叫「前視」）',
+  start: 'A 是起點，高度題目已經給了。量它是為了知道「儀器的視線有多高」。這個讀數要寫在記錄表的「後視」欄。',
+  mid: '這是中間點，量它只是為了算出它自己的高度。寫在「前視（中間點）」欄。',
+  relay: 'D 是轉點（接力點）：P 站量一次、搬到 Q 站再量一次，高度才能傳下去。這次寫在「前視（轉點）」欄。',
+  relayQ: '在 Q 站，D 變成這一站的起點：用 D 的高度算出 Q 站的視線有多高。這次寫在「後視」欄。',
+  end: 'G 是終點，題目也給了 G 的高度，最後用來檢查量得準不準。寫在「前視（轉點）」欄。',
 };
-let steps = [], gi = 0, gHold = 0, gInput = '', gMsg = '', gMsgCol = '#2b2a27', gTries = 0, gShowHint = false, gFlash = 0;
+function CALC_TEXT(k) {
+  if (k === 'W') return ['閉合差 W 用來檢查量得準不準。', '從 A 的高度出發，加上所有「後視」、減掉所有「前視（轉點）」，理論上應該剛好等於 G 的高度。', '算出來的 G 和題目給的 G 差多少，就是 W（可正可負）。中間點不算進去。', '公式：W = (HA + Σ後視 − Σ前視) − HG'];
+  if (/^c(bs|fs)/.test(k)) return ['W 是誤差，要把它修掉：總共要修正「−W」。', '把 −W 平均分成 4 份，依序給：A 的後視、D 的前視、D 的後視、G 的前視（這 4 個讀數會一路影響到 G）。', '每份約 −W ÷ 4，四捨五入到 mm，4 份加起來要剛好等於 −W（例：6 mm → 2、1、2、1）。', '輸入時帶正負號，例如 +0.002 或 −0.001（0 就輸入 0）。'];
+  if (k === 'HI1') return ['視準軸高程 = 儀器視線的高度。', 'A 的高度已知，A 尺的讀數就是「視線比 A 高多少」。', '公式：視準軸高程 = A 高程 + A 後視 + 後視改正'];
+  if (/^H[BCEF]$/.test(k)) return ['中間點的高度 = 視線高度 − 這把尺的讀數。', '讀數越大 → 尺露出越多 → 這個點越低。', '中間點沒有改正數。', `公式：${k[1]} 高程 = ${'BC'.includes(k[1]) ? 'P' : 'Q'} 站視準軸高程 − ${k[1]} 讀數`];
+  if (k === 'HD') return ['D 是轉點（接力點），它的前視讀數有改正數。', '公式：D 高程 = 視準軸高程 − D 前視 + 轉點改正'];
+  if (k === 'HI2') return ['搬到 Q 站以後，儀器高度變了，要重新算視線高度。', '公式：Q 站視準軸高程 = D 高程 + D 後視 + 後視改正'];
+  if (k === 'HGc') return ['G 是終點。改正過後，算出來的 G 應該剛好等於題目給的 G，可以用來檢查前面有沒有算錯。', '公式：G 高程 = 視準軸高程 − G 前視 + 轉點改正'];
+  if (/^Hd/.test(k)) return ['設計高程公式（x = 離 A 的距離）：', 'H設計 = A 設計高程 + G1 × x + (G2 − G1) × x² ÷ (2L)', '坡度是 %，代入時要 ÷100（例：0.7% → 0.007）。', `這一點 x = ${NAMES.indexOf(k[2]) * 20} m。`];
+  if (/^d[A-G]$/.test(k)) return ['輸入「樁頂高程 − 設計高程」（第 1 表算出的高程 − 剛剛的設計高程）。', '正數 → 樁頂比設計高，要挖掉，寫在「挖土深度」。', '負數 → 樁頂比設計低，要填土，寫在「填土高度」（寫正的）。'];
+  return [];
+}
+let steps = [], gi = 0, gHold = 0, gTries = 0, gShowHint = false, gFlash = 0, gTable = false;
 function buildSteps() {
   const s = [];
   s.push({ kind: 'info', title: '認識水準儀', body: [
     '水準儀是一支「會自己保持水平」的望遠鏡，架在三腳架上。',
     '它的工作只有一個：看遠處的尺，讀出「水平視線」碰到尺的高度。',
-    '看看儀器旁邊的藍色標籤：紅色標籤是鏡頭（前面），紅色虛線就是鏡頭看出去的方向。',
+    '大大的喇叭口、紅色環的那一頭是鏡頭（前面）；小小黑色眼罩那頭是目鏡（後面）。紅色虛線是鏡頭看出去的方向。',
     '前方圓形的畫面，就是從目鏡看進去會看到的東西。'] });
-  s.push({ kind: 'info', title: '這次的任務', body: [
-    '路上有 A～G 七支木樁，每支木樁上都立著一把尺（尺上方有名稱標籤）。',
-    'A 的高度是已知的。我們要量出其他木樁比 A 高或低多少，算出它們的高度。',
-    '儀器會架兩次：先在 P 站量 A、B、C、D，再搬到 Q 站量 D、E、F、G。',
-    '每量一支尺都是同樣三個動作：轉過去對準 → 調清楚 → 讀數字。'] });
-  const seq = [[0, 'start'], [1, 'mid'], [2, 'mid'], [3, 'relay']], seqQ = [[3, 'relayQ'], [4, 'mid'], [5, 'mid'], [6, 'end']];
+  s.push({ kind: 'info', title: '這次的任務（跟考試一樣）', body: [
+    '路上有 A～G 七支木樁，每支間隔 20 m，木樁上立著尺。',
+    'A 和 G 的高度是已知的。要量出 B～F 的高度。',
+    '外業：先在 P 站量 A、B、C、D，再搬到 Q 站量 D、E、F、G，只要讀「中線」，共 8 個數字。',
+    '內業：用記錄表算出各點高度，再算道路的設計高度和每支樁要挖或填多少。'] });
+  s.push({ kind: 'info', title: '怎麼讀尺（5 mm 刻劃尺）', body: [
+    '尺面每 1 公尺換一次底色：白 → 黃 → 白。',
+    '右邊的小黑字是「公分數」：149 代表 1.49 m，數字對齊它那條刻線。',
+    '紅色大字是公寸（0.1 m），它上面的紅點數 = 公尺數；整公尺的地方寫紅字＋「M」。',
+    '中間的黑白方塊每塊 5 mm，用來估最後的毫米。',
+    '讀法：找到中線「下面」最近的小黑字（例 149），再估中線比那條刻線高幾 mm（例 3）→ 1.493。'] });
   const addStation = (si, list) => {
     s.push({ kind: 'level', si });
     list.forEach(([pt, role], idx) => {
-      s.push({ kind: 'aim', si, pt, role, first: idx === 0 && si === 0 });
+      s.push({ kind: 'aim', si, pt, role });
       s.push({ kind: 'focus', si, pt });
-      WIRE.forEach((w, wi) => s.push({ kind: 'read', si, pt, w, first: idx === 0 && si === 0 && wi === 0 }));
+      s.push({ kind: 'read', si, pt, role, key: readOf(si, pt).key, first: si === 0 && idx === 0 });
     });
   };
-  addStation(0, seq);
+  addStation(0, [[0, 'start'], [1, 'mid'], [2, 'mid'], [3, 'relay']]);
   s.push({ kind: 'move' });
-  addStation(1, seqQ);
+  addStation(1, [[3, 'relayQ'], [4, 'mid'], [5, 'mid'], [6, 'end']]);
+  s.push({ kind: 'info', title: '外業完成！接下來是內業計算', table: 1, body: [
+    '左下按「看記錄表」可以看到官方格式的記錄表，8 個讀數已經填好了（考試時要自己寫）。',
+    '後視：每一站「第一把」尺（A、Q 站的 D）。　前視（中間點）：B、C、E、F。　前視（轉點）：每站「最後一把」尺（P 站的 D、G）。',
+    '視準軸高程 = 儀器視線的高度。　高程 = 每支樁的高度（要交的答案）。',
+    '因為讀數會有一點點誤差，要先算「閉合差 W」，再把誤差分配修正（改正）。'] });
+  s.push({ kind: 'calc', key: 'W', page: 1 });
+  ['cbsA', 'cfsD', 'cbsD', 'cfsG', 'HI1', 'HB', 'HC', 'HD', 'HI2', 'HE', 'HF', 'HGc'].forEach(k => s.push({ kind: 'calc', key: k, page: 1 }));
+  s.push({ kind: 'info', title: '設計高程：道路蓋好以後的高度', design: true, body: [
+    '題目設計了一段平順彎曲的路面（豎曲線），從 A 開始、到 G 結束。',
+    'G1 = 一開始的坡度、G2 = 最後的坡度（% = 每 100 m 升高幾 m，負的代表下坡）。L = 彎曲段全長。',
+    '這些資料是進入內業時才發給你的「已知資料」。'] });
+  [...'BCDEFG'].forEach(p => s.push({ kind: 'calc', key: 'Hd' + p, page: 2 }));
+  s.push({ kind: 'info', title: '挖土還是填土？', table: 2, body: [
+    '比較「現在的樁頂」和「設計路面」：',
+    '樁頂比設計高 → 要挖掉：挖土深度 = 樁頂 − 設計。',
+    '樁頂比設計低 → 要填土：填土高度 = 設計 − 樁頂。',
+    '接下來每一點請輸入「樁頂 − 設計」，系統會幫你放進挖或填那一欄。'] });
+  [...NAMES].forEach(p => s.push({ kind: 'calc', key: 'd' + p, page: 2 }));
   s.push({ kind: 'done' });
   return s;
 }
@@ -715,124 +950,164 @@ function levelHint() {
   }
   return best;
 }
+function autoLevel() { SCREW_A.forEach((a, k) => { S.screw[k] = -SCREW_R * (S.tripod.x * Math.cos(a) + S.tripod.y * Math.sin(a)); }); updateTilt(); }
+function yawTo(pt) { const s = D.st[S.si]; return Math.atan2(-(SX[pt] - s.x), s.z); }
+function aimAt(pt) { S.yaw += angDiff(yawTo(pt), S.yaw); }
+function focusTo(pt) { S.lf = Math.log(trueRead(S.si, pt).dist); }
+const bearing = y => ((-y / DEG) % 360 + 360) % 360;
 function readHint(v) {
-  const mm = Math.round(v * 1000), baseMM = Math.floor(mm / 100) * 100, base = baseMM / 1000;
-  const blocks = Math.floor((mm - baseMM) / 5), rem = mm - baseMM - blocks * 5;
-  return `中線位置 = ${base.toFixed(2)}（數字「${String(Math.round(base * 100)).padStart(3, '0')}」下面那條粗線）＋ 往上 ${blocks} 格 × 0.5 cm（= ${blocks * 5} mm）＋ 再估 ${rem} mm ≈ ${v.toFixed(3)}`;
+  const mm = Math.round(v * 1000), cm = Math.floor(mm / 10), r = mm - cm * 10, m = Math.floor(cm / 100), dm = Math.floor(cm / 10) % 10;
+  const red = dm === 0 ? `紅字 ${m}＋M` : `紅字 ${dm}${m ? `、上面 ${m} 個紅點` : ''}`;
+  return `中線下面最近的小黑字是「${cm}」（= ${(cm / 100).toFixed(2)} m，附近是${red}），中線比那條刻線高約 ${r} mm → ${v.toFixed(3)}`;
+}
+// 把某一步「自動完成」（跳過時用）
+function fillStep(st) {
+  if (!st) return;
+  if (st.kind === 'level') autoLevel();
+  else if (st.kind === 'aim') aimAt(st.pt);
+  else if (st.kind === 'focus') { aimAt(st.pt); focusTo(st.pt); }
+  else if (st.kind === 'read') setVal(st.key, r3(trueRead(st.si, st.pt).mid));
+  else if (st.kind === 'move') placeStation(1);
+  else if (st.kind === 'calc') acceptCalc(st.key, solve(vals));
+}
+function acceptCalc(k, r) {
+  if (!r) return;
+  if (/^d[A-G]$/.test(k)) {
+    const p = k[1]; setVal(k, r[k]);
+    delete vals['cut' + p]; delete disp['cut' + p]; delete vals['fill' + p]; delete disp['fill' + p];
+    if (r['cut' + p] != null) setVal('cut' + p, r['cut' + p]); else setVal('fill' + p, r['fill' + p]);
+  } else setVal(k, r[k]);
 }
 function goStep(i) {
-  { const k = steps[i] && steps[i].kind, cat = k === 'info' ? 'help' : k === 'level' ? 'screw' : 'main'; if (cat !== lastCat) { lastCat = cat; setCtlTab(cat); } }
-  gi = i; gHold = 0; gInput = ''; gMsg = ''; gTries = 0; gShowHint = false;
+  i = THREE.MathUtils.clamp(i, 0, steps.length - 1);
+  const st = steps[i];
+  { const k = st && st.kind, cat = k === 'info' ? 'help' : k === 'level' ? 'screw' : 'main'; if (cat !== lastCat) { lastCat = cat; setCtlTab(cat); } }
+  if (st.si !== undefined && st.si !== S.si) { placeStation(st.si); if (st.kind !== 'level') autoLevel(); }
+  if (st.kind === 'calc' || st.kind === 'done' || (st.kind === 'info' && i > 5)) prefillKnown();
+  gi = i; gHold = 0; inp = ''; inpMsg = ''; gTries = 0; gShowHint = false; gTable = st.kind === 'calc' ? gTable : false;
   drawFB();
 }
-function nextStep() { gFlash = 0.9; goStep(Math.min(gi + 1, steps.length - 1)); }
-function pressPractice(k) {
-  const st = steps[gi]; if (!st || st.kind !== 'read') return;
-  if (k === 'back') gInput = gInput.slice(0, -1); else if (k === 'clear') gInput = ''; else if (gInput.length < 4) gInput += k;
-  gMsg = ''; drawFB();
+function nextStep() { gFlash = 0.9; goStep(gi + 1); }
+function skipStep() { fillStep(steps[gi]); goStep(gi + 1); }
+function prevStep() { goStep(gi - 1); }
+function practiceKey(k) {
+  if (k === 'ok') return submitPractice();
+  padKey(k); drawFB();
 }
-function submitRead() {
-  const st = steps[gi]; if (gInput.length !== 4) { gMsg = '請輸入 4 位數字，例如 1.513 就輸入 1513'; gMsgCol = '#a86a00'; drawFB(); return; }
-  const t = trueRead(st.si, st.pt)[st.w.k], v = val(gInput), e = Math.round((v - t) * 1000);
-  if (Math.abs(e) <= 2) {
-    entries[rowOf(st.si, st.pt)][st.w.c] = gInput;
-    gMsg = `正確！（${e === 0 ? '完全一樣' : `只差 ${Math.abs(e)} mm，在容許範圍內`}）`; gMsgCol = '#2f7d32'; drawFB();
-    setTimeout(() => { if (steps[gi] === st) nextStep(); }, 1100);
+function submitPractice() {
+  const st = steps[gi]; if (!st || (st.kind !== 'read' && st.kind !== 'calc')) return;
+  const read = st.kind === 'read', v = evalInp(inp, read);
+  if (!isFinite(v)) { inpMsg = read ? '請輸入讀數，例如 1.513（或直接打 1513）' : '請輸入數字或算式'; inpMsgCol = '#a86a00'; drawFB(); return; }
+  let e;
+  if (read) e = Math.round((v - trueRead(st.si, st.pt).mid) * 1000);
+  else { const r = solve(vals); e = Math.round((v - r[st.key]) * 1000); }
+  const ok = read ? Math.abs(e) <= 2 : e === 0;
+  if (ok) {
+    if (read) setVal(st.key, r3(v)); else acceptCalc(st.key, solve(vals));
+    inpMsg = e === 0 ? '正確！' : `正確！（差 ${Math.abs(e)} mm，在容許範圍內）`; inpMsgCol = '#2f7d32'; drawFB();
+    setTimeout(() => { if (steps[gi] === st) nextStep(); }, 1000);
   } else {
     gTries++;
-    gMsg = `差了 ${Math.abs(e)} mm（你讀得${e > 0 ? '太大' : '太小'}），再看一次。`; gMsgCol = '#c0281e';
+    inpMsg = `差了 ${Math.abs(e) >= 1000 ? (Math.abs(e) / 1000).toFixed(3) + ' m' : Math.abs(e) + ' mm'}（${e > 0 ? '太大' : '太小'}），再試一次。`; inpMsgCol = '#c0281e';
     if (gTries >= 2) gShowHint = true;
     drawFB();
   }
 }
+const CHAPTER = i => { const k = steps[i] && steps[i].kind; const c = steps.findIndex(s => s.kind === 'calc'); return i < 3 ? '認識' : c > 0 && i >= c - 1 ? (steps[i].page === 2 || (steps[i].design || steps[i].table === 2) || k === 'done' ? '內業：設計高程與挖填' : '內業：高程計算') : '外業：' + (steps.findIndex(s => s.kind === 'move') < i ? 'Q 站' : 'P 站'); };
 function drawGuide() {
   const p = fb, st = steps[gi]; p.bg();
   const n = steps.length;
   p.rect(0, 0, 1120, 8, '#d5d1c6'); p.rect(0, 0, 1120 * (gi + 1) / n, 8, '#1f5fa8');
-  p.text(`練習模式　${gi + 1} / ${n}`, 1100, 40, 24, '#6b6860', 'right');
-  const T = (t) => p.text(t, 30, 50, 38, '#1f5fa8', 'left', '500');
-  let y = 120; const W = 1060, B = (t, c = '#2b2a27', sz = 30) => { y = p.wrap(t, 30, y, W, sz, c) + 8; };
+  p.text(`練習 ${gi + 1} / ${n}`, 30, 44, 26, '#1f5fa8', 'left', '500');
+  p.text(CHAPTER(gi), 200, 44, 22, '#6b6860');
+  p.btn(640, 16, 220, 58, '◀ 上一步', prevStep, { size: 26, fill: gi > 0 ? '#ffffff' : '#efede6', color: gi > 0 ? '#2b2a27' : '#b0aca2' });
+  p.btn(870, 16, 230, 58, st.kind === 'done' ? '（最後一步）' : '跳過 ▶', () => { if (st.kind !== 'done') skipStep(); }, { size: 26, fill: '#fff8e0', color: '#8a5a00', stroke: '#c99a00' });
+  if (gFlash > 0 && st.kind !== 'read' && st.kind !== 'calc') p.text('✓ 上一步完成', 470, 44, 26, '#2f7d32', 'center', '500');
+  const T = t => p.text(t, 30, 118, 38, '#1f5fa8', 'left', '500');
+  let y = 172; const W = 1060, B = (t, c = '#2b2a27', sz = 29) => { y = p.wrap(t, 30, y, W, sz, c) + 8; };
   const name = st.pt !== undefined ? NAMES[st.pt] : '';
+  const tableBtn = () => p.btn(320, 900, 280, 90, gTable ? '回到說明' : '看記錄表', () => { gTable = !gTable; drawFB(); }, { size: 28, fill: gTable ? '#eef3fa' : '#ffffff', color: '#1f5fa8', stroke: '#1f5fa8' });
+  if (gTable && (st.kind === 'calc' || st.kind === 'info' || st.kind === 'read')) {
+    const pg = st.page || st.table || (st.kind === 'read' ? 1 : 1), hk = st.kind === 'calc' ? (/^d/.test(st.key) ? (vals['fill' + st.key[1]] != null ? 'fill' : 'cut') + st.key[1] : st.key) : st.key;
+    T(pg === 1 ? '記錄表 1：縱斷面水準測量' : '答案紙 2：挖填土深度');
+    if (pg === 1) drawT1(p, 20, 150, null, hk); else drawT2(p, 20, 150, null, hk);
+  }
   if (st.kind === 'info') {
-    T(st.title); st.body.forEach(t => B('• ' + t));
-    p.btn(30, 860, 1060, 110, '我看懂了，下一步 ▶', nextStep, { fill: '#1f5fa8', color: '#fff', stroke: '#1f5fa8', size: 34 });
+    if (!gTable) {
+      T(st.title); st.body.forEach(t => B('• ' + t, '#2b2a27', 28));
+      if (st.design) { y += 6; B(`已知資料：A 設計高程 = ${D.HpA.toFixed(3)} m，G1 = ${D.G1 > 0 ? '+' : ''}${D.G1}%，G2 = ${D.G2 > 0 ? '+' : ''}${D.G2}%，L = ${D.L} m`, '#1f5fa8', 28); B('公式：H設計 = A 設計高程 + G1·x + (G2 − G1)·x² ÷ (2L)，x = 離 A 的距離', '#1f5fa8', 26); }
+    }
+    p.btn(620, 900, 470, 90, '我看懂了，下一步 ▶', nextStep, { fill: '#1f5fa8', color: '#fff', stroke: '#1f5fa8', size: 32 });
+    if (st.table || st.design) tableBtn();
   } else if (st.kind === 'level') {
     T(`${D.st[st.si].name} 站：把儀器調水平`);
-    B('為什麼？儀器要水平，看出去的視線才會是水平的，讀數才準。');
-    B('看前方的「氣泡放大圖」：白色氣泡要跑進中間的小圓圈。');
-    B('用右邊操作面板「腳螺旋」分頁的彩色 ↺ ↻ 按鈕轉腳螺旋。↻ 會把那一角抬高，氣泡就往那顆螺旋跑。');
+    B('為什麼？儀器要水平，看出去的視線才會是水平的，讀數才準。考試評分也會看「定平是否準確」。');
+    B('看上方的「氣泡放大圖」：白色氣泡要跑進中間的小圓圈。');
+    B('用右邊操作面板「腳螺旋」分頁的彩色 ↺ ↻ 按鈕。↻ 會把那一角抬高，氣泡就往那顆螺旋跑。');
     const tilt = G.length() / MIN, h = levelHint();
     y += 10;
-    if (G.length() <= LEVEL_OK) B(`目前：已經水平了！保持一下…`, '#2f7d32', 32);
+    if (G.length() <= LEVEL_OK) B('目前：已經水平了！保持一下…', '#2f7d32', 32);
     else {
       B(`目前傾斜：約 ${tilt.toFixed(0)} 分（要小於 10）`, '#a86a00', 30);
       B(`建議：按「${SCREW_NAME[h.k]}色螺旋 ${h.d > 0 ? '↻' : '↺'}」`, SCREW_CSS[h.k], 36);
       B('（橘色箭頭指著那顆螺旋。按住按鈕可以連續轉，快到時改成一下一下點。）', '#6b6860', 24);
     }
-    p.btn(800, 905, 290, 70, '跳過這步', nextStep, { size: 24, color: '#6b6860' });
   } else if (st.kind === 'aim') {
     T(`把鏡頭轉向 ${name} 尺`);
-    B(ROLE_TEXT[st.role], '#4a4740', 28);
+    B(ROLE_TEXT[st.role], '#4a4740', 27);
     B('看紅色虛線（鏡頭方向）和橘色箭頭（目標尺），讓虛線對準那把尺。');
-    B('大幅轉：Quest 按住握把轉動手把，或按面板「大轉」。');
-    B('快對到時：用「微調」或左搖桿輕推，一次只轉一點點。');
-    B('目標：望遠鏡畫面中間的直線，要壓在尺的正中間。');
+    B('操作面板上有「鏡頭方向」和「還差幾度」的數字。差很多先用「大轉」（1.5°），快到時用「微調」（0.02°）。');
+    B(`想快一點：按操作面板的「一鍵對準 ${name}」。`, '#6b6860', 26);
     y += 6;
     B(aimPt === st.pt ? `對到 ${name} 尺了！保持一下…` : aimPt >= 0 ? `現在對到的是 ${NAMES[aimPt]} 尺，不是 ${name}。` : '十字線還沒有壓在尺上。', aimPt === st.pt ? '#2f7d32' : '#a86a00', 30);
   } else if (st.kind === 'focus') {
     T(`把 ${name} 尺調清楚（對焦）`);
-    B('望遠鏡畫面如果模糊，就要對焦，跟手機相機點一下對焦是一樣的意思。');
-    B('按面板「看近一點／看遠一點」（或左搖桿上下），直到尺上的數字最清楚。');
+    B('望遠鏡畫面如果模糊，就要對焦，跟手機相機點一下對焦是同一個意思。');
+    B('對焦距離要調到跟尺的距離差不多。操作面板會顯示「對焦距離」和「尺的距離」。');
     const d = trueRead(st.si, st.pt).dist;
-    B(`提示：${name} 尺離你大約 ${d.toFixed(0)} 公尺。`, '#6b6860', 26);
+    B(`${name} 尺離儀器大約 ${d.toFixed(1)} m，目前對焦在 ${Math.exp(S.lf).toFixed(1)} m。`, '#1f5fa8', 28);
+    B(`想快一點：按操作面板的「一鍵對焦 ${name}」。`, '#6b6860', 26);
     y += 6;
     B(blurBias < 0.6 && aimPt === st.pt ? '很清楚了！' : aimPt !== st.pt ? `鏡頭跑掉了，先轉回 ${name} 尺。` : blurBias > 3 ? '還很模糊，繼續調。' : '快清楚了，再調一點點。', blurBias < 0.6 ? '#2f7d32' : '#a86a00', 30);
-  } else if (st.kind === 'read') {
-    T(`讀 ${name} 尺：${st.w.name}`);
-    if (st.w.k === 'mid') {
-      B(`看望遠鏡裡「${st.w.where}」對到尺上的哪個位置。`);
-      if (st.first || gShowHint) {
-        B('尺的讀法：數字 150 代表 1.50 公尺，就是數字下面那條粗線的位置。', '#4a4740', 26);
-        B('從粗線往上數：每一個黑格或白格 = 0.5 公分（5 mm），最後一點點用眼睛估。', '#4a4740', 26);
+  } else if (st.kind === 'read' || st.kind === 'calc') {
+    const read = st.kind === 'read';
+    if (!gTable) {
+      if (read) {
+        T(`讀 ${name} 尺（中線）`);
+        B(ROLE_TEXT[st.role], '#4a4740', 26);
+        B('看望遠鏡裡中間那條長橫線（中線）對到尺上哪裡。考試只要記中線，上線、下線不用記。', '#2b2a27', 27);
+        if (st.first || gShowHint) B('讀法：找中線「下面」最近的小黑字（例 149 = 1.49 m），再估中線比那條刻線高幾 mm。', '#4a4740', 25);
+        if (gShowHint) B('提示：' + readHint(trueRead(st.si, st.pt).mid), '#8a5a00', 25);
+      } else {
+        T(KEY_NAME(st.key) + (st.page === 2 && !/^d/.test(st.key) ? '' : ''));
+        CALC_TEXT(st.key).forEach((t, i) => B(t, i === CALC_TEXT(st.key).length - 1 && /公式|x =|輸入時/.test(t) ? '#1f5fa8' : '#2b2a27', 26));
+        if (gShowHint) { const r = solve(vals); B('提示：' + formulaOf(st.key, vals, r), '#8a5a00', 26); }
       }
-    } else {
-      B(`這次看「${st.w.where}」。讀法跟中線一樣。`);
-      B('上線和下線是用來算距離的：(上線 − 下線) × 100 = 儀器到尺的距離（公尺）。', '#4a4740', 26);
     }
-    if (gShowHint) B('提示：' + readHint(trueRead(st.si, st.pt)[st.w.k]).replace('中線', st.w.name), '#8a5a00', 26);
-    // 輸入區
-    p.rect(30, 560, 400, 110, '#ffffff', '#1f5fa8', 3);
-    p.text(gInput ? fmt(gInput) + ' m' : '_.___ m', 230, 616, 54, '#111', 'center', '500');
-    p.text('輸入 4 位數，例如 1.513 → 1513', 30, 700, 24, '#6b6860');
-    if (gMsg) p.wrap(gMsg, 30, 750, 420, 28, gMsgCol, 1.4, '500');
-    const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'back'], lab = { clear: '清除', back: '⌫' };
-    keys.forEach((k, i) => p.btn(470 + (i % 3) * 140, 545 + Math.floor(i / 3) * 92, 128, 82, lab[k] || k, () => pressPractice(k), { size: 36 }));
-    p.btn(890, 545, 200, 174, '確認', submitRead, { fill: '#1f5fa8', color: '#fff', stroke: '#1f5fa8', size: 36 });
-    p.btn(890, 729, 200, 174, '給我提示', () => { gShowHint = true; drawFB(); }, { size: 30, color: '#8a5a00', stroke: '#c99a00' });
+    drawInpBox(p, 30, 560, 570, read ? `${name} 尺讀數（中線）` : '輸入：' + KEY_NAME(st.key), read);
+    if (inpMsg) p.wrap(inpMsg, 30, 712, 570, 27, inpMsgCol, 1.35, '500');
+    else p.text(read ? '可直接打 4 位數：1513 = 1.513 m' : '可以直接打算式，例如 101.032−1.020', 30, 712, 22, '#6b6860');
+    p.btn(30, 900, 280, 90, '給我提示', () => { gShowHint = true; gTable = false; drawFB(); }, { size: 28, color: '#8a5a00', stroke: '#c99a00' });
+    tableBtn();
+    drawPad(p, 620, 560, 470, 430, practiceKey);
   } else if (st.kind === 'move') {
     T('搬到 Q 站');
-    B('P 站的 A、B、C、D 四把尺都量完了！');
-    B('D 是接力點：搬到 Q 站之後要再量一次 D。因為 D 的高度剛剛已經算得出來，所以可以把高度一路傳到 E、F、G。');
+    B('P 站的 A、B、C、D 四個讀數都記好了！');
+    B('D 是轉點：搬到 Q 站之後要再量一次 D，D 的高度才能一路傳到 E、F、G。');
     B('搬站之後，儀器要重新調水平。');
     p.btn(30, 860, 1060, 110, '搬到 Q 站 ▶', () => { placeStation(1); nextStep(); }, { fill: '#1f5fa8', color: '#fff', stroke: '#1f5fa8', size: 34 });
   } else if (st.kind === 'done') {
-    T('完成！來看看高度怎麼算出來');
-    const mids = entries.map(e => val(e[1]));
-    if (mids.some(v => v == null)) B('有幾格沒有讀，無法計算。', '#a86a00');
-    else {
-      const h = heightsFrom(mids), f = v => v.toFixed(3);
-      B(`① P 站視線有多高 = A 的高度 ${f(D.HA)} ＋ A 尺中線 ${f(mids[0])} = ${f(h.hiP)}`, '#2b2a27', 26);
-      B(`② 其他點的高度 = 視線高度 − 該點中線：B = ${f(h.raw[1])}、C = ${f(h.raw[2])}、D = ${f(h.HD)}`, '#2b2a27', 26);
-      B(`③ Q 站視線有多高 = D 的高度 ${f(h.HD)} ＋ D 尺中線（Q 站讀）${f(mids[4])} = ${f(h.hiQ)}`, '#2b2a27', 26);
-      B(`④ E = ${f(h.raw[4])}、F = ${f(h.raw[5])}、G 算出來 = ${f(h.HGc)}`, '#2b2a27', 26);
-      B(`⑤ 題目給的 G = ${f(D.HG)}，兩者差 ${(h.w * 1000).toFixed(0)} mm。這個差叫「閉合差」，越小代表量得越準；考試時要把它平均分攤回各點。`, '#1f5fa8', 26);
-      B('讀數越大，代表那個點越低（尺露出來越多）。', '#6b6860', 24);
-    }
-    p.btn(30, 880, 340, 95, '再練一次', () => startMode('practice'), { size: 30 });
-    p.btn(390, 880, 360, 95, '挑戰實戰模式', () => startMode('exam'), { fill: '#1f5fa8', color: '#fff', stroke: '#1f5fa8', size: 30 });
-    p.btn(770, 880, 320, 95, '回選單', () => startMode('menu'), { size: 30 });
+    T('完成！如果這是考試，你的分數：');
+    const sc = scoreAll(vals, null, false);
+    sc.it.forEach(([nm, max, got, det]) => {
+      p.text(`${nm}`, 30, y + 6, 26, '#2b2a27', 'left', '500'); p.text(`${got} / ${max}`, 1090, y + 6, 26, got === max ? '#2f7d32' : '#a86a00', 'right', '500');
+      y = p.wrap(det, 46, y + 42, 1040, 21, '#4a4740', 1.35) + 10;
+    });
+    p.text(`總分 ${sc.total} / 100（練習模式沒有計時）`, 30, y + 14, 28, '#1f5fa8', 'left', '500');
+    p.btn(30, 900, 340, 90, '再練一次', () => startMode('practice'), { size: 30 });
+    p.btn(390, 900, 360, 90, '挑戰實戰模式', () => startMode('exam'), { fill: '#1f5fa8', color: '#fff', stroke: '#1f5fa8', size: 30 });
+    p.btn(770, 900, 320, 90, '回選單', () => startMode('menu'), { size: 30 });
   }
-  if (gFlash > 0 && st.kind !== 'read') p.text('✓ 上一步完成', 560, 48, 30, '#2f7d32', 'center', '500');
 }
 const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.4, 1, 16), new THREE.MeshBasicMaterial({ color: 0xff8a1c, depthTest: false }));
 arrow.rotation.x = Math.PI; arrow.renderOrder = 30; arrow.layers.set(UI); scene.add(arrow);
@@ -856,22 +1131,23 @@ function guideTick(dt) {
     if (st.kind === 'focus') { gHold = aimPt === st.pt && blurBias < 0.6 ? gHold + dt : 0; if (gHold > 0.4) nextStep(); }
   }
 }
-let gRedraw = 0;
+let gRedraw = 0, ctlRedraw = 0, examRedraw = 0;
 
 // ═════════════ 模式切換 ═════════════
 function startMode(m) {
   MODE = m;
-  D = genData(); buildGround(); buildStakes(); resetBook(); placeStation(0);
+  D = genData(); buildGround(); buildStakes(); resetBook(); lastCat = ''; placeStation(0);
   if (m === 'practice') { steps = buildSteps(); goStep(0); }
   const show = m === 'practice';
   practiceOnly.forEach(o => o.visible = show); roleLabels.forEach(o => o.visible = show);
   ctlWin.g.visible = telPanel.visible = bub.mesh.visible = m !== 'menu';
   if (m === 'menu') fbWin.pose(0, 1.81, -0.99, -0.1, 0);              // 選單放正前方（座標是面板上緣）
   else fbWin.pose(-0.8, 1.67, -0.71, -0.25, 0.68);                     // 左邊，讓出儀器周圍給標籤
-  ctlWin.pose(0.98, 1.5, -0.65, -0.3, -0.85);
+  ctlWin.pose(0.98, 1.58, -0.65, -0.3, -0.85);
   fbWin.setCollapsed(false); ctlWin.setCollapsed(false);
-  ctlTab = m === 'practice' ? 'help' : 'screw'; levelDone = false;
-  ctlWin.drawBar(); drawCtl(); drawFB();
+  if (m !== 'practice') ctlTab = 'screw';
+  levelDone = false;
+  fbWin.drawBar(); ctlWin.drawBar(); drawCtl(); drawFB();
 }
 
 // ═════════════ 每幀：儀器、對焦、望遠鏡 ═════════════
@@ -928,12 +1204,14 @@ function holdTick(dt) {
 }
 
 // ═════════════ 輸入：電腦 ═════════════
-const press = k => MODE === 'practice' ? pressPractice(k) : MODE === 'exam' ? pressExam(k) : null;
+// 鍵盤：數字、小數點、+−×÷()、Backspace、Enter 都送進目前的輸入格
+const press = k => MODE === 'practice' ? practiceKey(k) : MODE === 'exam' && view === 'book' ? examKey(k) : null;
 addEventListener('keydown', e => {
-  const dm = /^(Digit|Numpad)([0-9])$/.exec(e.code);
-  if (dm && !e.repeat) press(dm[2]);
-  if (e.code === 'Backspace') press('back');
-  if (e.code === 'Enter') { if (MODE === 'practice' && steps[gi] && steps[gi].kind === 'read') submitRead(); else if (MODE === 'exam') { nextCell(); drawFB(); } }
+  if (e.repeat && e.key !== 'Backspace') return;
+  const map = { '-': '−', '*': '×', '/': '÷' };
+  if (/^[0-9.+()]$/.test(e.key) || map[e.key]) press(map[e.key] || e.key);
+  else if (e.key === 'Backspace') press('⌫');
+  else if (e.key === 'Enter') press('ok');
 });
 let look = { yaw: 0, pitch: -0.3 }, drag = null;
 const ray = new THREE.Raycaster(); ray.layers.set(UI);
@@ -1002,7 +1280,7 @@ function xrInput(dt) {
       stickStep('ly', ay, () => focusStep(-1), () => focusStep(1), dt);
     } else if (src.handedness === 'right') {
       const c = ctrls.find(k => k.userData.src === src);
-      if (ay < -0.6 && c) tele.ctrl = c;                         // 往前推：開始瞄準瞬移
+      if (ay < -0.6 && c && MODE !== 'exam') tele.ctrl = c;                         // 往前推：開始瞄準瞬移
       if (tele.ctrl && Math.abs(ay) < 0.3) { if (tele.ok) teleportTo(tele.p.x, tele.p.z); tele.ctrl = null; }
       // 左右：轉身 30°（推一次轉一次，要回中才能再轉）
       if (!tele.ctrl && Math.abs(ay) < 0.5) {
@@ -1026,6 +1304,7 @@ function xrInput(dt) {
 function deskInput(dt) {
   if (renderer.xr.isPresenting) return;
   camera.rotation.y = look.yaw; camera.rotation.x = look.pitch;
+  if (MODE === 'exam') return;                  // 實戰模式不能走動
   const f = (keys.ArrowUp || keys.KeyW ? 1 : 0) - (keys.ArrowDown || keys.KeyS ? 1 : 0), r = (keys.ArrowRight || keys.KeyD ? 1 : 0) - (keys.ArrowLeft || keys.KeyA ? 1 : 0);
   if (f || r) {
     const sp = (keys.shift ? 7 : 2.5) * dt, a = look.yaw + rig.rotation.y;
@@ -1154,7 +1433,7 @@ for (const m of [fb.mesh, ctl.mesh, fbWin.bar.mesh, ctlWin.bar.mesh, bub.mesh, t
   m.children.forEach((c, i) => { c.renderOrder = 51 + i; if (c.material) c.material.depthTest = false; });
 }
 startMode('menu');
-window.dbg = { S, D: () => D, G, entries: () => entries, trueRead, press, placeStation, look, camera, telCam, renderer, rt, startMode, rig, returnHome, teleportTo, keys, labels, homeBtn, wins, ctlTab: () => ctlTab, steps: () => steps, gi: () => gi, goStep, submitRead, st: () => ({ aimPt, blurBias, MODE }) };
+window.dbg = { S, D: () => D, G, vals: () => vals, solve, fillStep, skipStep, prevStep, scoreAll, toCalc, commitCell, setCell: k => { cell = k; }, inp: v => { inp = v; }, trueRead, press, placeStation, look, camera, telCam, renderer, rt, startMode, rig, returnHome, teleportTo, keys, labels, homeBtn, wins, ctlTab: () => ctlTab, steps: () => steps, gi: () => gi, goStep, submitPractice, st: () => ({ aimPt, blurBias, MODE }) };
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(dbg.tick = (fixed) => {
   const dt = typeof fixed === 'number' && fixed < 1 ? fixed : Math.min(clock.getDelta(), 0.05);
@@ -1162,6 +1441,9 @@ renderer.setAnimationLoop(dbg.tick = (fixed) => {
   updateInstrument(); guideTick(dt); updateLabels(); homeTick(dt); followTick(dt);
   if (MODE === 'exam' && !levelDone) { levelT = G.length() <= LEVEL_OK ? levelT + dt : 0; if (levelT > 1.5) { levelDone = true; if (ctlTab === 'screw') setCtlTab('main'); } }
   if (MODE === 'practice' && (gRedraw -= dt) < 0) { gRedraw = 0.25; const k = steps[gi] && steps[gi].kind; if (k === 'level' || k === 'aim' || k === 'focus') drawFB(); }
+  if (MODE !== 'menu' && ctlTab === 'main' && ctlWin.g.visible && !ctlWin.collapsed && (ctlRedraw -= dt) < 0) { ctlRedraw = 0.2; drawCtl(); }
+  if (MODE === 'exam' && view === 'book' && (examRedraw -= dt) < 0) { examRedraw = 1; drawFB(); }
+  if (endConfirm > 0 && (endConfirm -= dt) <= 0) { endConfirm = 0; drawFB(); }
   drawBubble(); renderTelescope();
   renderer.render(scene, camera);
 });
