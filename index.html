@@ -679,7 +679,7 @@ function evalInp(s, read4) {
 function padKey(k) {
   if (k === '⌫' || k === 'back') inp = inp.slice(0, -1);
   else if (k === '清除' || k === 'clear') inp = '';
-  else if (inp.length < 40) inp += k;
+  else if (inp.length < 160) inp += k;          // 設計高程的算式很長，給足空間
   inpMsg = '';
 }
 function drawPad(p, x0, y0, w, h, onKey, okLabel = '確認') {
@@ -693,8 +693,22 @@ function drawPad(p, x0, y0, w, h, onKey, okLabel = '確認') {
 function drawInpBox(p, x0, y0, w, label, read4) {
   p.rect(x0, y0, w, 124, '#ffffff', '#1f5fa8', 3);
   p.text(label, x0 + 16, y0 + 26, 25, '#1f5fa8', 'left', '500');
-  const shown = inp.length > 22 ? '…' + inp.slice(-22) : inp;
-  p.text(shown || '用右邊鍵盤輸入（也可以打算式）', x0 + 16, y0 + 74, inp ? 40 : 22, inp ? '#111' : '#9a968c', 'left', '500');
+  // 長算式：字自動縮小；還放不下就分兩行，再放不下才只顯示最後面
+  if (!inp) p.text('用右邊鍵盤輸入（也可以打算式）', x0 + 16, y0 + 74, 22, '#9a968c', 'left', '500');
+  else {
+    const maxW = w - 32, cx = p.x; let size = 40;
+    const fits = (s, z) => { cx.font = `500 ${z}px ${FONT}`; return cx.measureText(s).width <= maxW; };
+    while (size > 24 && !fits(inp, size)) size -= 2;
+    if (fits(inp, size)) p.text(inp, x0 + 16, y0 + 74, size, '#111', 'left', '500');
+    else {
+      size = 22; let cut = inp.length;
+      while (cut > 1 && !fits(inp.slice(0, cut), size)) cut--;
+      let rest = inp.slice(cut);
+      while (rest.length > 1 && !fits('…' + rest, size)) rest = rest.slice(1);
+      p.text(inp.slice(0, cut), x0 + 16, y0 + 56, size, '#111', 'left', '500');
+      p.text((cut + rest.length < inp.length ? '…' : '') + rest, x0 + 16, y0 + 84, size, '#111', 'left', '500');
+    }
+  }
   const v = evalInp(inp, read4);
   if (inp && isFinite(v) && !/^\d*\.?\d*$/.test(inp)) p.text('= ' + v.toFixed(3), x0 + w - 16, y0 + 106, 26, '#2f7d32', 'right', '500');
   else if (inp && read4 && /^\d{4}$/.test(inp)) p.text('= ' + v.toFixed(3) + ' m', x0 + w - 16, y0 + 106, 26, '#2f7d32', 'right', '500');
@@ -771,17 +785,205 @@ function drawRec() {
 let calcLayout = null;
 // 外業時：記錄表收在右側遠處；進入內業：記錄表移到右前方展開，操作面板和望遠鏡收起來
 function applyLayout() {
-  if (MODE !== 'practice') { recWin.g.visible = false; calcLayout = null; return; }
+  if (MODE !== 'practice') { recWin.g.visible = diaWin.g.visible = false; calcLayout = null; return; }
   recWin.g.visible = true;
   const calc = gi >= firstCalcInfo();
   if (calc === calcLayout) return; calcLayout = calc;
   ctlWin.g.visible = telPanel.visible = bub.mesh.visible = !calc;
+  diaWin.g.visible = calc; if (calc) { diaWin.pose(0, 2.25, -1.12, 0.15, 0); diaWin.setCollapsed(false); recKey = ''; }
   if (calc) { recWin.pose(0.8, 1.67, -0.71, -0.25, -0.68); recWin.setCollapsed(false); }
   else { recWin.pose(1.25, 1.66, -0.05, -0.2, -1.35); recWin.setCollapsed(true); }
 }
+// ═════════════ 練習模式：把記錄表的數字「貼」到場地上對應的位置 ═════════════
+// 視線（紅色水平線）、每把尺的讀數（樁頂到視線的直線）、樁頂高程、設計高程與挖填，隨記錄表填寫逐步出現
+const REL = {
+  sumB: ['bsA', 'bsD'], sumF: ['fsD', 'fsG'], W: ['H_A', 'bsA', 'bsD', 'fsD', 'fsG'],
+  HI1: ['H_A', 'bsA', 'cbsA'], HB: ['HI1', 'isB'], HC: ['HI1', 'isC'], HD: ['HI1', 'fsD', 'cfsD'],
+  HI2: ['HD', 'bsD', 'cbsD'], HE: ['HI2', 'isE'], HF: ['HI2', 'isF'], HGc: ['HI2', 'fsG', 'cfsG'],
+};
+const relOf = k => REL[k] || (/^c(bs|fs)/.test(k) ? REL.W : /^d[A-G]$/.test(k) ? [TOPKEY[NAMES.indexOf(k[1])], 'Hd' + k[1]] : []);
+const SHORT = { bs: '後視', is: '中間點', fs: '轉點前視' };
+const dataGroup = new THREE.Group(); scene.add(dataGroup);
+const dataSprites = [];
+function clearData() {
+  dataGroup.traverse(o => { if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } if (o.geometry) o.geometry.dispose(); });
+  dataGroup.clear(); dataSprites.length = 0;
+}
+function dTag(text, x, y, color, hl, cx = 0.5) {
+  const s = makeSprite(text, 1, color, hl ? '#fff3b0' : '#ffffff');
+  s.position.set(x, y, 0.05); s.center.set(cx, 0.5); s.layers.set(UI); s.renderOrder = 23;
+  dataGroup.add(s); dataSprites.push(s); return s;
+}
+function dLine(a, b, color, w = 0.02) {          // 線會被儀器、樹正常遮住，不會浮在最上層
+  const d = new V3().subVectors(b, a), m = new THREE.Mesh(new THREE.BoxGeometry(w, d.length() || 0.001, w), new THREE.MeshBasicMaterial({ color }));
+  m.position.copy(a).addScaledVector(d, 0.5); m.quaternion.setFromUnitVectors(UP, d.clone().normalize()); m.layers.set(UI); m.renderOrder = 22; dataGroup.add(m);
+}
+const elevY = e => D.tops[0] + (e - D.HA);          // 高程 → 場地裡的高度
+function buildData() {
+  clearData();
+  if (MODE !== 'practice') return;
+  const st = steps[gi] || {}, cur = st.key || '', hl = new Set([cur, ...relOf(cur)]);
+  const has = k => isFinite(vals[k]);
+  D.st.forEach((s, si) => {
+    const reads = READS.filter(r => r.si === si);
+    if (!reads.some(r => has(r.key))) return;
+    const sy = s.gy + s.ih, xs = s.pts.map(i => SX[i]), hiK = si ? 'HI2' : 'HI1';
+    dLine(new V3(Math.min(...xs) - 0.5, sy, 0), new V3(Math.max(...xs) + 0.5, sy, 0), 0xe03131, 0.02);
+    dTag(has(hiK) ? `${s.name} 站視線高程（視準軸高程）${vals[hiK].toFixed(3)}` : cur === hiK ? `${s.name} 站視準軸高程 = ?` : `${s.name} 站的水平視線`, s.x, sy + 0.35, '#c0281e', hl.has(hiK));
+    reads.forEach(r => {
+      if (!has(r.key)) return;
+      const side = Math.sign(s.x - SX[r.pt]), x = SX[r.pt] + side * 0.12, top = D.tops[r.pt];
+      const col = r.col === 'bs' ? '#1f5fa8' : r.col === 'fs' ? '#c0281e' : '#4a4740';
+      dLine(new V3(x, top, 0), new V3(x, sy, 0), new THREE.Color(col).getHex(), 0.03);
+      dTag(`${NAMES[r.pt]} ${SHORT[r.col]} ${vals[r.key].toFixed(3)}`, x + side * 0.15, (top + sy) / 2, col, hl.has(r.key), side > 0 ? 0 : 1);
+    });
+  });
+  TOPKEY.forEach((k, i) => {
+    if (has(k) || cur === k) dTag(has(k) ? `${NAMES[i]} 樁頂高程 ${vals[k].toFixed(3)}` : `${NAMES[i]} 樁頂高程 = ?`, SX[i] - 0.2, D.tops[i] - 0.35, '#2f7d32', hl.has(k), 1);
+  });
+  // 設計路面（綠線）與挖填
+  if ([...NAMES].some(p => has('Hd' + p)) || /^Hd|^d[A-G]$/.test(cur)) {
+    const pts = []; for (let x = 0; x <= 120; x += 4) pts.push(new V3(x, elevY(designH(x)), 0.02));
+    for (let i = 1; i < pts.length; i++) dLine(pts[i - 1], pts[i], 0x2f9e44, 0.03);
+  }
+  [...NAMES].forEach((p, i) => {
+    const hk = 'Hd' + p; if (!has(hk) && cur !== hk) return;
+    const y = elevY(designH(i * 20)), c = vals['cut' + p], f = vals['fill' + p];
+    let txt = has(hk) ? `${p} 設計 ${vals[hk].toFixed(3)}` : `${p} 設計高程 = ?`;
+    if (isFinite(c)) txt += `｜挖 ${c.toFixed(3)}`; else if (isFinite(f)) txt += `｜填 ${f.toFixed(3)}`;
+    if (isFinite(c) || isFinite(f)) dLine(new V3(SX[i] + 0.2, D.tops[i], 0), new V3(SX[i] + 0.2, y, 0), isFinite(c) ? 0xa86a00 : 0x1f5fa8, 0.04);
+    dTag(txt, SX[i] + 0.35, y - 0.3, '#2f7d32', hl.has(hk) || cur === 'd' + p, 0);
+  });
+}
+function scaleData() {
+  for (const s of dataSprites) { const d = camPos.distanceTo(s.position), h = Math.max(0.06, d * 0.03); s.scale.set(h * s.userData.aspect, h, 1); }
+}
+
+// ═════════════ 練習模式：剖面示意圖（看懂公式裡的加減） ═════════════
+const dia = new Panel(0.86, 0.442, 1400, 720);
+const diaWin = new Win(dia, 0.86, 0.442, p => p.text('剖面示意圖（往上量 = 加、往下量 = 減）', 28, 64, 38, '#ffffff', 'left', '500'));
+diaWin.g.visible = false;
+const DIA_NOTE = k => {
+  if (k === 'intro') return '高程 = 離海平面多高（海拔）。A 的高程已知；水準儀量的是「視線比樁頂高多少」＝讀數。';
+  if (k === 'sumB') return '後視 = 從已知點「往上」量到視線，所以是加。把兩次往上加起來。';
+  if (k === 'sumF') return '前視（轉點）= 從視線「往下」量到下一點，所以是減。把兩次往下加起來。';
+  if (k === 'W') return 'HA 往上 Σ後視、往下 Σ前視，應該剛好走到 G。走到的位置和題目的 HG 差多少 = W。';
+  if (/^c(bs|fs)/.test(k)) return '把誤差 −W 平均分給 4 段「往上／往下」，讓最後剛好走到題目給的 HG。';
+  if (k === 'HI1') return 'A 樁頂高程（從海平面往上）＋ A 後視（再往上到視線）＝ 視線的高程。';
+  if (/^H[BCEF]$/.test(k)) return '視線的高程「往下」減掉這把尺的讀數（視線到樁頂）＝ 這支樁頂的高程。';
+  if (k === 'HD') return 'P 站視線往下減 D 前視，再加改正數 ＝ D 樁頂高程。';
+  if (k === 'HI2') return '搬到 Q 站：D 高程 ＋ D 後視（往上到新視線）＝ Q 站視線的高程。';
+  if (k === 'HGc') return 'Q 站視線往下減 G 前視，加改正數 ＝ G 高程，應該剛好等於題目的 HG。';
+  if (/^Hd|^design/.test(k)) return '設計路面：從 A 設計高程出發，先照 G1 坡度直走（G1·x），再慢慢彎向 G2（(G2−G1)x²÷2L）。';
+  if (/^d[A-G]$|^cutinfo/.test(k)) return '樁頂在設計線上面 → 要挖掉（正）；樁頂在設計線下面 → 要填土（負）。';
+  return '';
+};
+let diaKey = '';
+function drawDia() {
+  const p = dia, x = p.x, st = steps[gi] || {}, k = st.key || st.dia || 'intro';
+  p.bg('#ffffff');
+  const r = solve(vals) || {}, v = vals, reveal = gShowHint;
+  const f3 = n => isFinite(n) ? n.toFixed(3) : '?', sg = n => isFinite(n) ? fmtV('W', n) : '?';
+  const show = (key, signed) => key === k ? (reveal && isFinite(r[key]) ? (signed ? sg(r[key]) : f3(r[key])) : '?') : (signed ? sg(v[key]) : f3(v[key]));
+  const design = /^Hd|^d[A-G]$|^design|^cutinfo/.test(k);
+  const E = new Set([k, ...relOf(k)]);
+  if (k === 'intro') ['H_A', 'HI1', 'isB', 'HB'].forEach(a => E.add(a));
+  const Ht = D.H.map((h, i) => i === 0 ? D.HA : h), SE = D.st.map(s => D.HA + (s.gy + s.ih - D.tops[0]));
+  const des = [...NAMES].map((_, i) => designH(i * 20));
+  let lo = Math.min(...Ht) - 0.35, hi = design ? Math.max(...Ht, ...des) + 0.35 : Math.max(...SE) + 0.3;
+  if (design) lo = Math.min(lo, ...des.map(d => d - 0.35));
+  const Y = e => 560 - (e - lo) / (hi - lo) * 430, X = m => 130 + m / 120 * 1150;
+  // 說明列
+  p.wrap(DIA_NOTE(k), 24, 26, 1350, 26, '#1f5fa8', 1.3, '500');
+  // 第二行：公式（按了「給我提示」才代入完整數字）
+  if (st.kind === 'calc') {
+    const gen = CALC_TEXT(k).find(t => /^公式|^H設計 =/.test(t)) || '';
+    const line = reveal ? '代入：' + formulaOf(k, vals, r) : gen.replace(/^公式：/, '公式：') + '（按「給我提示」看代入的數字）';
+    p.wrap(line, 24, 66, 1350, 23, reveal ? '#8a5a00' : '#4a4740', 1.3, '500');
+  }
+  // 地面
+  x.beginPath(); x.moveTo(X(-6), 600); Ht.forEach((h, i) => x.lineTo(X(SX[i]), Y(h) + 4)); x.lineTo(X(126), 600); x.closePath(); x.fillStyle = '#efe5cf'; x.fill();
+  // 斷軸：中間省略了很長一段，下面才是海平面
+  x.strokeStyle = '#9a968c'; x.lineWidth = 2; x.beginPath();
+  for (let i = 0; i <= 56; i++) { const xx = 20 + i * 24.5, yy = 612 + (i % 2 ? 8 : -8); i ? x.lineTo(xx, yy) : x.moveTo(xx, yy); } x.stroke();
+  x.fillStyle = '#5b6b7a'; x.fillRect(0, 640, 1400, 6);
+  p.text('基準面＝平均海平面（高程 0 m）；中間省略', 24, 668, 22, '#5b6b7a', 'left', '500');
+  // 樁
+  NAMES.split('').forEach((pt, i) => { x.fillStyle = '#9a7448'; x.fillRect(X(SX[i]) - 5, Y(Ht[i]), 10, 22); p.text(pt, X(SX[i]), 700, 26, '#2b2a27', 'center', '500'); });
+  const tag = (t, xx, yy, col, on, al = 'left') => {
+    x.font = `500 22px ${FONT}`; const w = x.measureText(t).width + 14, bx = al === 'left' ? xx : al === 'right' ? xx - w : xx - w / 2;
+    p.rect(bx, yy - 15, w, 30, on ? '#fff3b0' : '#ffffff', col, on ? 2.5 : 1.5); p.text(t, bx + 7, yy + 1, 22, col, 'left', '500');
+  };
+  const arrow = (xx, y1, y2, col, w = 3) => {   // 從 y1 畫到 y2，箭頭在 y2
+    x.strokeStyle = col; x.fillStyle = col; x.lineWidth = w; x.beginPath(); x.moveTo(xx, y1); x.lineTo(xx, y2); x.stroke();
+    const d = y2 > y1 ? 1 : -1; x.beginPath(); x.moveTo(xx, y2); x.lineTo(xx - 8, y2 - d * 14); x.lineTo(xx + 8, y2 - d * 14); x.closePath(); x.fill();
+  };
+  const fromSea = (key, xx, e, label, col) => {   // 從海平面量上來的高程
+    const on = E.has(key); if (!on) return;
+    arrow(xx, 640, Y(e), col, 3); tag(`${label} ${show(key)}`, xx + 10, (640 + Y(e)) / 2 + 30, col, key === k);
+  };
+  if (!design) {
+    D.st.forEach((s, si) => {
+      const xs = s.pts.map(i => SX[i]), sy = Y(SE[si]), hiK = si ? 'HI2' : 'HI1';
+      x.strokeStyle = '#c0281e'; x.lineWidth = 2.5; x.setLineDash([12, 8]); x.beginPath(); x.moveTo(X(Math.min(...xs)) - 20, sy); x.lineTo(X(Math.max(...xs)) + 20, sy); x.stroke(); x.setLineDash([]);
+      const gx = X(s.x), gyy = Y(D.HA + s.gy - D.tops[0]);
+      x.strokeStyle = '#4a4740'; x.lineWidth = 3; x.beginPath(); x.moveTo(gx - 14, gyy); x.lineTo(gx, sy + 8); x.lineTo(gx + 14, gyy); x.stroke();
+      x.fillStyle = '#4a4740'; x.fillRect(gx - 16, sy - 7, 32, 14);
+      p.text(`${s.name} 站視線`, gx, sy - 22, 20, '#c0281e', 'center', '500');
+      fromSea(hiK, gx + 26, SE[si], `${s.name} 站視準軸高程`, '#c0281e');
+      READS.filter(q => q.si === si).forEach(q => {
+        const side = Math.sign(s.x - SX[q.pt]), xx = X(SX[q.pt]) + side * 16, on = E.has(q.key);
+        const up = q.col === 'bs', col = q.col === 'bs' ? '#1f5fa8' : q.col === 'fs' ? '#c0281e' : '#6b6860';
+        if (up) arrow(xx, Y(Ht[q.pt]), sy, on ? col : '#d0ccc2', on ? 3.5 : 2); else arrow(xx, sy, Y(Ht[q.pt]), on ? col : '#d0ccc2', on ? 3.5 : 2);
+        if (on) {
+          const cK = q.key === 'bsA' ? 'cbsA' : q.key === 'bsD' ? 'cbsD' : q.key === 'fsD' ? 'cfsD' : q.key === 'fsG' ? 'cfsG' : null;
+          const corr = cK && (E.has(cK) || /^c(bs|fs)/.test(k)) ? `（改正 ${show(cK, true)}）` : '';
+          tag(`${up ? '↑ +' : '↓ −'} ${NAMES[q.pt]} ${SHORT[q.col]} ${show(q.key)}${corr}`, xx + side * 8, (Y(Ht[q.pt]) + sy) / 2, col, q.key === k || cK === k, side > 0 ? 'left' : 'right');
+        }
+      });
+    });
+    fromSea('H_A', X(0) - 28, Ht[0], 'A 樁頂高程', '#2f7d32');
+    ['HB', 'HC', 'HD', 'HE', 'HF', 'HGc'].forEach(key => { const i = TOPKEY.indexOf(key); fromSea(key, X(SX[i]) - 28, Ht[i], `${NAMES[i]} 樁頂高程`, '#2f7d32'); });
+    if (k === 'W' || /^c(bs|fs)/.test(k)) {     // G 點：算出來的 vs 題目給的
+      const gx = X(120), gy = Y(Ht[6]), w = r.W || 0, off = w > 0 ? -18 : w < 0 ? 18 : 0;
+      x.strokeStyle = '#2f7d32'; x.lineWidth = 3; x.beginPath(); x.moveTo(gx - 30, gy); x.lineTo(gx + 30, gy); x.stroke();
+      x.strokeStyle = '#a86a00'; x.setLineDash([6, 4]); x.beginPath(); x.moveTo(gx - 30, gy + off); x.lineTo(gx + 30, gy + off); x.stroke(); x.setLineDash([]);
+      tag(`題目的 HG ${f3(D.HG)}`, gx - 36, gy - 34, '#2f7d32', false, 'right');
+      tag(`走到的 G（差 W = ${k === 'W' ? show('W', true) : sg(v.W)}，放大畫）`, gx - 36, gy + off + 30, '#a86a00', k === 'W', 'right');
+    }
+  } else {
+    // 設計：G1 坡度線（虛線）＋ 豎曲線（綠）
+    x.strokeStyle = '#1f5fa8'; x.lineWidth = 2; x.setLineDash([10, 8]); x.beginPath(); x.moveTo(X(0), Y(D.HpA)); x.lineTo(X(120), Y(D.HpA + D.G1 / 100 * 120)); x.stroke(); x.setLineDash([]);
+    p.text(`G1 坡度線（${D.G1 > 0 ? '+' : ''}${D.G1}%）`, X(84), Y(D.HpA + D.G1 / 100 * 84) - 20, 20, '#1f5fa8', 'center', '500');
+    x.strokeStyle = '#2f9e44'; x.lineWidth = 4; x.beginPath(); for (let m = 0; m <= 120; m += 2) { const yy = Y(designH(m)); m ? x.lineTo(X(m), yy) : x.moveTo(X(m), yy); } x.stroke();
+    p.text('設計路面（豎曲線）', X(112), Y(designH(112)) + 28, 20, '#2f9e44', 'center', '500');
+    tag(`A 設計高程 ${f3(D.HpA)}`, X(0) + 10, Y(D.HpA) - 26, '#2f9e44', false);
+    const pt = /^Hd/.test(k) ? k[2] : /^d[A-G]$/.test(k) ? k[1] : null;
+    if (pt) {
+      const i = NAMES.indexOf(pt), m = i * 20, xx = X(m), yT = Y(D.HpA + D.G1 / 100 * m), yD = Y(designH(m));
+      x.strokeStyle = '#9a968c'; x.lineWidth = 1.5; x.setLineDash([4, 4]); x.beginPath(); x.moveTo(X(0), 590); x.lineTo(xx, 590); x.stroke(); x.setLineDash([]);
+      p.text(`x = ${m} m`, (X(0) + xx) / 2, 578, 20, '#4a4740', 'center', '500');
+      if (/^Hd/.test(k)) {
+        x.fillStyle = '#1f5fa8'; x.beginPath(); x.arc(xx, yT, 6, 0, 7); x.fill();
+        tag(`A設計 + G1·x = ${(D.HpA + D.G1 / 100 * m).toFixed(3)}`, xx + 12, yT - 24, '#1f5fa8', false);
+        if (Math.abs(yD - yT) > 3) arrow(xx, yT, yD, '#a86a00', 3);
+        tag(`(G2−G1)x²÷2L = ${((D.G2 - D.G1) / 100 * m * m / (2 * D.L)).toFixed(3)}`, xx + 12, (yT + yD) / 2 + 26, '#a86a00', false);
+        x.fillStyle = '#2f9e44'; x.beginPath(); x.arc(xx, yD, 7, 0, 7); x.fill();
+        tag(`${pt} 設計高程 ${show(k)}`, xx - 12, yD + 30, '#2f9e44', true, 'right');
+      } else {
+        const yTop = Y(Ht[i]);
+        arrow(xx + 18, yD, yTop, '#a86a00', 3.5);
+        tag(`${pt} 樁頂 ${f3(v[TOPKEY[i]])}`, xx - 14, yTop - 4, '#2b2a27', false, 'right');
+        tag(`${pt} 設計 ${f3(v['Hd' + pt])}`, xx - 14, yD + 26, '#2f9e44', false, 'right');
+        tag(`樁頂 − 設計 = ${show(k, true)}`, xx + 30, (yD + yTop) / 2, '#a86a00', true);
+      }
+    }
+  }
+  p.update();
+}
 function drawFB() {
   if (MODE === 'menu') drawMenu();
-  else if (MODE === 'practice') { drawGuide(); const k = gi + ':' + Object.keys(disp).length; if (k !== recKey) { recKey = k; drawRec(); } }
+  else if (MODE === 'practice') { drawGuide(); const k = gi + ':' + Object.keys(disp).length + ':' + gShowHint; if (k !== recKey) { recKey = k; drawRec(); buildData(); if (diaWin.g.visible) drawDia(); } }
   else drawExam();
   fb.update();
   const key = MODE + view + phase; if (fbWin.lastKey !== key) { fbWin.lastKey = key; fbWin.drawBar(); }
@@ -989,19 +1191,25 @@ function buildSteps() {
   addStation(0, [[0, 'start'], [1, 'mid'], [2, 'mid'], [3, 'relay']]);
   s.push({ kind: 'move' });
   addStation(1, [[3, 'relayQ'], [4, 'mid'], [5, 'mid'], [6, 'end']]);
-  s.push({ kind: 'info', title: '外業完成！接下來是內業計算', table: 1, body: [
+  s.push({ kind: 'info', title: '外業完成！接下來是內業計算', table: 1, dia: 'intro', body: [
     '右邊是官方格式的記錄表（可以收合），8 個讀數已經填好了（考試時要自己寫）。接下來每算一格，表上會標黃色。',
     '後視：每一站「第一把」尺（A、Q 站的 D）。　前視（中間點）：B、C、E、F。　前視（轉點）：每站「最後一把」尺（P 站的 D、G）。',
     '視準軸高程 = 儀器視線的高度。　高程 = 每支樁的高度（要交的答案）。',
     '因為讀數會有一點點誤差，要先算「閉合差 W」，再把誤差分配修正（改正）。'] });
+  s.push({ kind: 'info', title: '什麼是「高程」？', dia: 'intro', body: [
+    '高程 = 一個點比「基準面」高多少。台灣的基準面是平均海平面，所以高程就是大家說的「海拔」。',
+    'A 的高程題目給了：表示 A 樁頂比海平面高這麼多公尺。B～F 的高程就是這次要算出來的答案。',
+    '水準儀量不到海拔，它只能量「視線比樁頂高多少」（讀數）。視線是水平的，所以讀數越大，那支樁越低。',
+    '算法就是一步一步「往上加、往下減」：A 高程 ＋ A 讀數 ＝ 視線高程；視線高程 − B 讀數 ＝ B 高程。',
+    '前方的剖面示意圖和場地上的標籤會跟著你算的數字一起出現，對照著看就有畫面。'] });
   ['sumB', 'sumF', 'W'].forEach(k => s.push({ kind: 'calc', key: k, page: 1 }));
   ['cbsA', 'cfsD', 'cbsD', 'cfsG', 'HI1', 'HB', 'HC', 'HD', 'HI2', 'HE', 'HF', 'HGc'].forEach(k => s.push({ kind: 'calc', key: k, page: 1 }));
-  s.push({ kind: 'info', title: '設計高程：道路蓋好以後的高度', design: true, body: [
+  s.push({ kind: 'info', title: '設計高程：道路蓋好以後的高度', design: true, dia: 'design', body: [
     '題目設計了一段平順彎曲的路面（豎曲線），從 A 開始、到 G 結束。',
     'G1 = 一開始的坡度、G2 = 最後的坡度（% = 每 100 m 升高幾 m，負的代表下坡）。L = 彎曲段全長。',
     '這些資料是進入內業時才發給你的「已知資料」。'] });
   [...'BCDEFG'].forEach(p => s.push({ kind: 'calc', key: 'Hd' + p, page: 2 }));
-  s.push({ kind: 'info', title: '挖土還是填土？', body: [
+  s.push({ kind: 'info', title: '挖土還是填土？', dia: 'cutinfo', body: [
     '比較「現在的樁頂」和「設計路面」：',
     '樁頂比設計高 → 要挖掉：挖土深度 = 樁頂 − 設計。',
     '樁頂比設計低 → 要填土：填土高度 = 設計 − 樁頂。',
@@ -1102,6 +1310,7 @@ function drawGuide() {
   const recBtn = () => p.btn(320, 900, 280, 90, recWin.collapsed ? '展開記錄表 ▶' : '收合記錄表', () => { recWin.setCollapsed(!recWin.collapsed); drawFB(); }, { size: 28, fill: recWin.collapsed ? '#ffffff' : '#eef3fa', color: '#1f5fa8', stroke: '#1f5fa8' });
   if (st.kind === 'info') {
     T(st.title); st.body.forEach(t => B('• ' + t, '#2b2a27', 28));
+    if (st.dia === 'intro' && gi > firstCalcInfo()) p.btn(700, 88, 390, 58, '走到現場看（整條路線）', () => goView(60, 38), { size: 24, fill: '#eef3fa', color: '#1f5fa8', stroke: '#1f5fa8' });
     if (st.design) { y += 6; B(`已知資料：A 設計高程 = ${D.HpA.toFixed(3)} m，G1 = ${D.G1 > 0 ? '+' : ''}${D.G1}%，G2 = ${D.G2 > 0 ? '+' : ''}${D.G2}%，L = ${D.L} m`, '#1f5fa8', 28); B('公式：H設計 = A 設計高程 + G1·x + (G2 − G1)·x² ÷ (2L)，x = 離 A 的距離', '#1f5fa8', 26); }
     p.btn(620, 900, 470, 90, '我看懂了，下一步 ▶', nextStep, { fill: '#1f5fa8', color: '#fff', stroke: '#1f5fa8', size: 32 });
     if (gi >= firstCalcInfo()) recBtn();
@@ -1145,6 +1354,8 @@ function drawGuide() {
       B('看不清楚？操作面板可以「湊近看」或換練習用的高倍率。', '#6b6860', 24);
     } else {
       T(KEY_NAME(st.key));
+      const vw = viewFor(st.key);
+      if (vw) p.btn(700, 88, 390, 58, `走到現場看（${vw.what}）`, () => goView(vw.x, vw.z), { size: 24, fill: '#eef3fa', color: '#1f5fa8', stroke: '#1f5fa8' });
       const txt = CALC_TEXT(st.key);
       txt.forEach((t, i) => B(t, /^公式|^H設計 =/.test(t) ? '#1f5fa8' : '#2b2a27', 25));
       // 這一格會用到的數字（直接列出來，不用回頭找）
@@ -1213,7 +1424,8 @@ function startMode(m) {
   D = genData(); buildGround(); buildStakes(); resetBook(); lastCat = ''; recKey = ''; calcLayout = null; placeStation(0);
   setZoom(1); setBig(false);
   // 實戰模式不能移動：面板固定在測站（不需要懸浮）；練習模式恢復懸浮
-  for (const w of [fbWin, ctlWin, recWin]) w.setMode(m === 'exam' ? 'fixed' : 'follow');
+  for (const w of [fbWin, ctlWin, recWin, diaWin]) w.setMode(m === 'exam' ? 'fixed' : 'follow');
+  clearData();
   if (m === 'practice') { steps = buildSteps(); goStep(0); }
   const show = m === 'practice';
   practiceOnly.forEach(o => o.visible = show); roleLabels.forEach(o => o.visible = show);
@@ -1255,6 +1467,7 @@ function updateInstrument() {
   // 尺上方的名稱標籤：遠近都保持看得清楚的大小
   if (MODE === 'practice') {
     camera.getWorldPosition(camPos);
+    scaleData();
     for (const rl of roleLabels) {
       const d = camPos.distanceTo(rl.position), h = Math.max(0.15, d * 0.028);
       rl.scale.set(h * rl.material.map.image.width / rl.material.map.image.height, h, 1);
@@ -1407,6 +1620,20 @@ function snapTurn(dir) {                       // 繞著頭轉，人不會被甩
 }
 function teleportTo(x, z) { moveHeadTo(x, z); follow.force = true; }
 function homePos() { const s = D.st[S.si]; return { x: s.x, z: s.z + 0.6 }; }
+// 走到側面看某個位置（練習模式內業用：從側面看，樁、視線、標籤才不會疊在一起）
+function goView(x, z) {
+  if (renderer.xr.isPresenting) { rig.rotation.y -= headYaw(); moveHeadTo(x, z); }
+  else { rig.rotation.y = 0; rig.position.set(x, groundAt(x), z); look.yaw = 0; look.pitch = -0.08; }
+  follow.force = follow.snap = true;
+}
+function viewFor(k) {
+  if (/^(sumB|sumF|W|c(bs|fs))/.test(k) || k === 'intro') return { x: 60, z: 38, what: '整條路線' };
+  if (k === 'HI1') return { x: 15, z: 9, what: 'A 和 P 站' };
+  if (k === 'HI2') return { x: 75, z: 9, what: 'D 和 Q 站' };
+  const p = /^H([B-F])$/.exec(k) || /^(?:Hd|d)([A-G])$/.exec(k) || (k === 'HGc' ? [0, 'G'] : null);
+  if (p) { const i = NAMES.indexOf(p[1]); return { x: SX[i], z: 7, what: `${p[1]} 樁` }; }
+  return null;
+}
 function returnHome() {
   const h = homePos();
   if (renderer.xr.isPresenting) {              // 轉回面向儀器，再把頭放回測站位置
@@ -1506,7 +1733,7 @@ xrBtn.onclick = async () => {
 // ═════════════ 啟動 ═════════════
 setLayer(stationUI, UI);
 // 面板永遠畫在標籤和虛線上面（不被擋住）
-for (const m of [fb.mesh, ctl.mesh, rec.mesh, fbWin.bar.mesh, ctlWin.bar.mesh, recWin.bar.mesh, bub.mesh, telPanel, homeBtn.mesh]) {
+for (const m of [fb.mesh, ctl.mesh, rec.mesh, dia.mesh, fbWin.bar.mesh, ctlWin.bar.mesh, recWin.bar.mesh, diaWin.bar.mesh, bub.mesh, telPanel, homeBtn.mesh]) {
   m.renderOrder = m === homeBtn.mesh ? 60 : 50; m.material.transparent = true; m.material.depthTest = false;
   m.children.forEach((c, i) => { c.renderOrder = 51 + i; if (c.material) c.material.depthTest = false; });
 }
