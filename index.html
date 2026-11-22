@@ -60,6 +60,7 @@ camera.layers.enable(UI);
 camera.rotation.order = 'YXZ';
 const rig = new THREE.Group(); scene.add(rig); rig.add(camera); camera.position.set(0, 1.6, 0);
 const stationUI = new THREE.Group(); scene.add(stationUI);   // 測站旁的面板（固定在地上）
+const instUI = new THREE.Group(); scene.add(instUI);         // 儀器台：釘在儀器上、轉向面對你（望遠鏡畫面、氣泡、操作面板）
 
 const V3 = THREE.Vector3, UP = new V3(0, 1, 0);
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -381,8 +382,8 @@ const telMat = new THREE.ShaderMaterial({
 });
 const TEL_R = 0.26;
 const telPanel = new THREE.Mesh(new THREE.CircleGeometry(TEL_R, 64), telMat);
-telPanel.position.set(0.44, 1.86, -1.0); telPanel.rotation.y = -0.35;   // 放在儀器右上方，不擋標籤
-stationUI.add(telPanel);
+telPanel.position.set(0.44, 1.86, -0.4); telPanel.rotation.y = -0.35;   // 儀器台：放在儀器右上方（座標以儀器為原點），不擋標籤
+instUI.add(telPanel);
 let wireLabels;
 const retC = document.createElement('canvas'), retC2 = document.createElement('canvas');
 retC.width = retC.height = retC2.width = retC2.height = 1024;
@@ -407,7 +408,7 @@ function drawReticle() {
 }
 function setZoom(z) { telZoom = z; telCam.fov = FOV_EXAM / z; telCam.updateProjectionMatrix(); drawReticle(); }
 // 「湊近目鏡看」：只把畫面放大顯示，不改變望遠鏡的倍率（補償頭盔解析度，考試也可用）
-function setBig(b) { telBig = b; telPanel.scale.setScalar(b ? 1.6 : 1); telPanel.position.set(b ? 0.36 : 0.44, b ? 1.98 : 1.86, b ? -0.98 : -1.0); }
+function setBig(b) { telBig = b; telPanel.scale.setScalar(b ? 1.6 : 1); telPanel.position.set(b ? 0.36 : 0.44, b ? 1.98 : 1.86, b ? -0.38 : -0.4); }
 {
   telPanel.add(at(new THREE.Mesh(new THREE.CircleGeometry(TEL_R, 64), new THREE.MeshBasicMaterial({ map: retT, transparent: true, depthWrite: false })), 0, 0, 0.002));
   wireLabels = at(new THREE.Mesh(new THREE.CircleGeometry(TEL_R, 64), new THREE.MeshBasicMaterial({ map: retT2, transparent: true, depthWrite: false })), 0, 0, 0.004);
@@ -452,7 +453,7 @@ class Panel {
 
 // 氣泡放大圖
 const bub = new Panel(0.17, 0.17, 256, 256);
-bub.mesh.position.set(-0.13, 1.9, -1.05); bub.mesh.rotation.y = 0.12; stationUI.add(bub.mesh);   // 儀器正上方偏左，不擋儀器
+bub.mesh.position.set(-0.13, 1.9, -0.45); bub.mesh.rotation.y = 0.12; instUI.add(bub.mesh);   // 儀器正上方偏左，不擋儀器
 function drawBubble() {
   const x = bub.x, R = 128, sc = 100 / (0.6 * DEG);
   x.fillStyle = '#20262c'; x.fillRect(0, 0, 256, 256);
@@ -469,40 +470,64 @@ function drawBubble() {
 
 // ═════════════ 懸浮視窗：上方標題列（可切換「懸浮／固定在測站」、可收合） ═════════════
 // 懸浮 = 跟著你走：你走動或轉身很久時才會重新排到你面前；原地轉頭看面板時不會亂跑
+// 面板的位置設計（最多同時兩塊）：
+//   儀器台 instUI：望遠鏡畫面＋氣泡＋操作面板，釘在儀器上；你走動時只會轉向面對你，不會跟著你跑
+//   工作板 followUI：引導／記錄表（分頁切換），放好就不動；按住標題列可以拖到你要的位置，按 Y／B 鍵（電腦按 F）叫到面前
 const followUI = new THREE.Group(); scene.add(followUI);
-const follow = { tp: new V3(), ty: 0, turnT: 0, force: true, snap: true };
+const follow = { tp: new V3(), ty: 0, force: true, snap: true };
+let instSnap = true, barsReady = false, calcLayout = null;
 const wins = [];
 class Win {
   constructor(body, w, h, drawBar) {
-    this.body = body; this.w = w; this.h = h; this.drawBarFn = drawBar;
+    this.w = w; this.drawBarFn = drawBar;
     body.mesh.geometry.translate(0, -h / 2, 0);                      // 原點改在上緣，收合時標題列不動
     this.bar = new Panel(w, 0.075, Math.round(w * 1700), 128);
-    this.bar.mesh.position.y = 0.0425;
-    this.g = new THREE.Group(); this.g.add(this.bar.mesh, body.mesh);
-    this.mode = 'follow'; this.collapsed = false;
-    stationUI.add(this.g); this.setMode('follow');
+    this.bar.mesh.position.y = 0.0425; this.bar.mesh.userData.win = this;
+    this.g = new THREE.Group(); this.g.add(this.bar.mesh);
+    this.body = null; this.mode = 'follow'; this.collapsed = false;
+    stationUI.add(this.g); this.swap(body, true); this.setMode('follow');
     wins.push(this);
   }
-  // 切換懸浮／固定時保留目前在空間中的位置，面板不會跳走（之前固定時會跳回測站，看起來像消失）
-  setMode(m) { this.mode = m; const to = m === 'fixed' ? stationUI : followUI; stationUI.updateMatrixWorld(true); followUI.updateMatrixWorld(true); if (this.g.parent) to.attach(this.g); else to.add(this.g); setLayer(this.g, UI); this.drawBar(); }
+  // 分頁：同一塊面板換顯示內容（引導 ↔ 記錄表、記錄表 ↔ 剖面圖），不會多出新的面板
+  swap(panel, quiet) {
+    if (this.body && this.body.mesh.parent === this.g) this.body.mesh.visible = false;
+    this.body = panel; panel.mesh.userData.win = this; this.g.add(panel.mesh); panel.mesh.visible = !this.collapsed; setLayer(panel.mesh, UI);
+    if (!quiet) this.drawBar();
+  }
+  setMode(m) { this.mode = m; const to = m === 'fixed' ? stationUI : m === 'inst' ? instUI : followUI; to.add(this.g); setLayer(this.g, UI); this.drawBar(); }
   setCollapsed(c) { this.collapsed = c; this.body.mesh.visible = !c; this.drawBar(); }
   pose(x, y, z, rx, ry) { this.g.position.set(x, y, z); this.g.rotation.set(rx, ry, 0, 'YXZ'); }
   drawBar() {
+    if (!barsReady) return;
     const p = this.bar, W = p.c.width; p.bg('#2f3e4e');
-    const right = this.drawBarFn(p, W) || 0;
-    // 右側：收合／懸浮切換
+    this.drawBarFn(p, W, this);
     if (MODE !== 'exam') p.btn(W - 190, 14, 176, 100, this.collapsed ? '展開 ▼' : '收合 ▲', () => this.setCollapsed(!this.collapsed), { size: 32, fill: '#3f5266', color: '#fff', stroke: '#6f8499' });   // 實戰模式不能收合
-    if (MODE !== 'exam') p.btn(W - 470, 14, 270, 100, this.mode === 'follow' ? '懸浮中（跟著我）' : '固定在測站', () => this.setMode(this.mode === 'follow' ? 'fixed' : 'follow'),
-      { size: 30, fill: this.mode === 'follow' ? '#1f5fa8' : '#6b4a2b', color: '#fff', stroke: '#ffffff' });
+    p.text('拖曳標題列＝移動', MODE !== 'exam' ? W - 206 : W - 24, 64, 24, '#a9b8c8', 'right');
     p.update();
   }
 }
+// 標題列上的分頁按鈕
+function barTabs(p, win, list) {
+  list.forEach(([label, panel], i) => {
+    const on = win.body === panel;
+    p.btn(14 + i * 290, 14, 276, 100, label, () => { win.swap(panel); if (panel === dia) drawDia(); if (panel === rec) drawRec(); },
+      { size: 30, fill: on ? '#fbfaf6' : '#3f5266', color: on ? '#1f5fa8' : '#e8edf2', stroke: on ? '#fbfaf6' : '#6f8499' });
+  });
+}
 const angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
+// 儀器台：位置釘在儀器上，只轉向面對你
+function instTick(dt) {
+  instUI.position.copy(inst.position);
+  headWorld(hv); const dx = hv.x - inst.position.x, dz = hv.z - inst.position.z;
+  if (Math.hypot(dx, dz) > 0.25) instUI.rotation.y += angDiff(Math.atan2(dx, dz), instUI.rotation.y) * (instSnap ? 1 : Math.min(1, dt * 3));
+  instSnap = false;
+}
+function summonPanels() { follow.force = true; follow.snap = false; }
 function followTick(dt) {
   headWorld(hv); const yaw = headYaw();
-  // 只有走動、瞬移、轉身 30° 或按「面板歸位」才重新排到你面前；單純轉頭看四周時面板不動
-  if (follow.force || Math.hypot(hv.x - follow.tp.x, hv.z - follow.tp.z) > 0.45) {
-    follow.tp.copy(hv); follow.ty = yaw; follow.force = false; follow.turnT = 0;
+  // 工作板只有在「回到測站」「走到現場看」「面板歸位」「叫到面前」或剛進 VR 時才移動；你走動、瞬移、轉身時它留在原地
+  if (follow.force) {
+    follow.tp.copy(hv); follow.ty = yaw; follow.force = false;
   }
   const k = follow.snap ? 1 : Math.min(1, dt * 4); follow.snap = false;
   followUI.position.lerp(hv2.set(follow.tp.x, follow.tp.y - 1.6, follow.tp.z), k);
@@ -584,10 +609,8 @@ function drawCtl() {
     p.text('電腦', 24, 222, 28, '#2b2a27', 'left', '500');
     p.text(MODE === 'exam' ? '拖曳滑鼠：看四周　滑鼠點面板按鈕：操作儀器' : 'W A S D（或方向鍵）：走路，加 Shift 跑步　拖曳滑鼠：看四周', 24, 268, 25, '#4a4740');
     p.text('數字鍵／+−×÷：輸入讀數或算式　Enter：確認', 24, 308, 25, '#4a4740');
-    if (MODE !== 'exam') {
-      p.text('面板上方的「懸浮中／固定在測站」可以切換面板要跟著你走，還是留在儀器旁邊；', 24, 360, 22, '#6b6860');
-      p.text('「收合」可以先把面板縮起來。', 24, 392, 22, '#6b6860');
-    }
+    p.text('移動面板：射線指著標題列按住板機（或握把）拖曳，拖曳時右搖桿上下 = 推遠／拉近（電腦：按住標題列拖）', 24, 360, 21, '#6b6860');
+    p.text(MODE !== 'exam' ? '走遠了面板會留在原地：按 Y 或 B（電腦按 F）叫到面前。望遠鏡畫面和這塊面板釘在儀器上。' : '望遠鏡畫面、氣泡和這塊操作面板釘在儀器上，會轉向面對你。', 24, 392, 21, '#6b6860');
     // 選單（VR 裡看不到網頁左上角的說明區，所以換模式、回主選單、離開 VR 都放在這裡）
     p.rect(14, 430, 1072, 2, '#d8d4ca');
     p.text('選單', 24, 470, 28, '#2b2a27', 'left', '500');
@@ -781,11 +804,11 @@ function cellBox(p, k, x, y, w, h, editable, hl) {
 
 // ═════════════ 面板主程式 ═════════════
 const fb = new Panel(0.80, 0.72, 1120, 1008);
-const fbWin = new Win(fb, 0.80, 0.72, (p) => p.text(MODE === 'menu' ? '選單' : MODE === 'practice' ? '練習引導' : view === 'result' ? '評分結果' : phase === 'field' ? '外業：觀測記錄表' : '內業：計算與答案紙', 28, 64, 40, '#ffffff', 'left', '500'));
+const fbWin = new Win(fb, 0.80, 0.72, (p, W, win) => MODE === 'practice' && !calcLayout ? barTabs(p, win, [['練習引導', fb], ['記錄表', rec]]) : p.text(MODE === 'menu' ? '選單' : MODE === 'practice' ? '練習引導' : view === 'result' ? '評分結果' : phase === 'field' ? '外業：觀測記錄表' : '內業：計算與答案紙', 28, 64, 40, '#ffffff', 'left', '500'));
 let aimPt = -1, blurBias = 0;
 // 練習模式：獨立的記錄表視窗（可收合），跟左邊的說明可以同時看、對照
 const rec = new Panel(0.8, 0.714, 1120, 1000);
-const recWin = new Win(rec, 0.8, 0.714, p => p.text('記錄表（官方格式）', 28, 64, 40, '#ffffff', 'left', '500'));
+const recWin = new Win(rec, 0.8, 0.714, (p, W, win) => barTabs(p, win, [['記錄表（官方格式）', rec], ['剖面示意圖', dia]]));
 recWin.g.visible = false;
 let recKey = '';
 function drawRec() {
@@ -798,17 +821,16 @@ function drawRec() {
   drawT2(p, 20, y + 84, null, hk);
   p.update();
 }
-let calcLayout = null;
-// 外業時：記錄表收在右側遠處；進入內業：記錄表移到右前方展開，操作面板和望遠鏡收起來
+// 外業：工作板（引導／記錄表分頁）＋儀器台；內業：儀器台收起來，換成右邊的「記錄表／剖面圖」板 → 任何時候最多兩塊
 function applyLayout() {
-  if (MODE !== 'practice') { recWin.g.visible = diaWin.g.visible = false; calcLayout = null; return; }
-  recWin.g.visible = true;
+  if (MODE !== 'practice') { recWin.g.visible = false; if (fbWin.body !== fb) fbWin.swap(fb); calcLayout = null; return; }
   const calc = gi >= firstCalcInfo();
   if (calc === calcLayout) return; calcLayout = calc;
   ctlWin.g.visible = telPanel.visible = bub.mesh.visible = !calc;
-  diaWin.g.visible = calc; if (calc) { diaWin.pose(0, 2.25, -1.12, 0.15, 0); diaWin.setCollapsed(false); recKey = ''; }
-  if (calc) { recWin.pose(0.8, 1.67, -0.71, -0.25, -0.68); recWin.setCollapsed(false); }
-  else { recWin.pose(1.25, 1.66, -0.05, -0.2, -1.35); recWin.setCollapsed(true); }
+  recWin.g.visible = calc;
+  fbWin.swap(fb);
+  if (calc) { recWin.swap(rec); recWin.pose(0.8, 1.67, -0.71, -0.25, -0.68); recWin.setCollapsed(false); recKey = ''; }
+  fbWin.drawBar(); recWin.drawBar();
 }
 // ═════════════ 練習模式：把記錄表的數字「貼」到場地上對應的位置 ═════════════
 // 視線（紅色水平線）、每把尺的讀數（樁頂到視線的直線）、樁頂高程、設計高程與挖填，隨記錄表填寫逐步出現
@@ -885,8 +907,7 @@ function scaleData() {
 
 // ═════════════ 練習模式：剖面示意圖（看懂公式裡的加減） ═════════════
 const dia = new Panel(0.86, 0.491, 1400, 800);
-const diaWin = new Win(dia, 0.86, 0.491, p => p.text('剖面示意圖（往上量 = 加、往下量 = 減）', 28, 64, 38, '#ffffff', 'left', '500'));
-diaWin.g.visible = false;
+dia.mesh.geometry.translate(0, -0.491 / 2, 0);   // 不再是獨立視窗：是右邊「記錄表」板的第二個分頁（往上量 = 加、往下量 = 減）
 const DIA_NOTE = k => {
   if (k === 'intro') return '高程 = 離海平面多高（海拔）。A 的高程已知；水準儀量的是「視線比樁頂高多少」＝讀數。';
   if (k === 'sumB') return '後視 = 從已知點「往上」量到視線，所以是加。把兩次往上加起來。';
@@ -1012,21 +1033,22 @@ function drawDia() {
   p.update();
 }
 // 面板歸位：所有面板回到預設位置並重新顯示（不小心弄不見時用）
-// 望遠鏡畫面、氣泡放大圖跟著懸浮面板一起走，彼此的相對位置永遠不變（不會互相重疊）
-function attachHud() {
-  const to = MODE === 'exam' ? stationUI : followUI;
-  to.add(telPanel); to.add(bub.mesh); setLayer(telPanel, UI); setLayer(bub.mesh, UI);
+// 儀器台（望遠鏡畫面、氣泡、操作面板）釘在儀器上；工作板：練習模式放在你面前、實戰模式固定在測站
+function placeWins() {
+  for (const w of [fbWin, recWin]) w.setMode(MODE === 'exam' ? 'fixed' : 'follow');
+  ctlWin.setMode('inst');
+  if (MODE === 'menu') fbWin.pose(0, 1.81, -0.99, -0.1, 0); else fbWin.pose(-0.8, 1.67, -0.71, -0.25, 0.68);
+  ctlWin.pose(0.9, 1.56, 0.0, -0.3, -0.85);
+  recWin.pose(0.8, 1.67, -0.71, -0.25, -0.68);
+  instSnap = true;
 }
 function resetPanels() {
-  attachHud();
-  for (const w of [fbWin, ctlWin, recWin, diaWin]) w.setMode(MODE === 'exam' ? 'fixed' : 'follow');
-  if (MODE === 'menu') fbWin.pose(0, 1.81, -0.99, -0.1, 0); else fbWin.pose(-0.8, 1.67, -0.71, -0.25, 0.68);
-  ctlWin.pose(0.98, 1.58, -0.65, -0.3, -0.85); fbWin.setCollapsed(false); ctlWin.setCollapsed(false);
+  placeWins(); fbWin.setCollapsed(false); ctlWin.setCollapsed(false); recWin.setCollapsed(false);
   calcLayout = null; applyLayout(); follow.force = follow.snap = true; recKey = ''; drawFB();
 }
 function drawFB() {
   if (MODE === 'menu') drawMenu();
-  else if (MODE === 'practice') { drawGuide(); const k = gi + ':' + Object.keys(disp).length + ':' + gShowHint; if (k !== recKey) { recKey = k; drawRec(); buildData(); if (diaWin.g.visible) drawDia(); } }
+  else if (MODE === 'practice') { drawGuide(); const k = gi + ':' + Object.keys(disp).length + ':' + gShowHint; if (k !== recKey) { recKey = k; drawRec(); buildData(); if (recWin.g.visible) drawDia(); } }
   else drawExam();
   fb.update();
   const key = MODE + view + phase; if (fbWin.lastKey !== key) { fbWin.lastKey = key; fbWin.drawBar(); }
@@ -1466,18 +1488,13 @@ function startMode(m) {
   MODE = m;
   D = genData(); buildGround(); buildStakes(); resetBook(); lastCat = ''; recKey = ''; calcLayout = null; placeStation(0);
   setZoom(1); setBig(false);
-  // 實戰模式不能移動：面板固定在測站（不需要懸浮）；練習模式恢復懸浮
-  for (const w of [fbWin, ctlWin, recWin, diaWin]) w.setMode(m === 'exam' ? 'fixed' : 'follow');
-  attachHud();
+  placeWins();
   clearData();
   if (m === 'practice') { steps = buildSteps(); goStep(0); }
   const show = m === 'practice';
   practiceOnly.forEach(o => o.visible = show); roleLabels.forEach(o => o.visible = show);
   ctlWin.g.visible = telPanel.visible = bub.mesh.visible = m !== 'menu';
-  if (m === 'menu') fbWin.pose(0, 1.81, -0.99, -0.1, 0);              // 選單放正前方（座標是面板上緣）
-  else fbWin.pose(-0.8, 1.67, -0.71, -0.25, 0.68);                     // 左邊，讓出儀器周圍給標籤
-  ctlWin.pose(0.98, 1.58, -0.65, -0.3, -0.85);
-  fbWin.setCollapsed(false); ctlWin.setCollapsed(false);
+  fbWin.setCollapsed(false); ctlWin.setCollapsed(false); recWin.setCollapsed(false);
   if (m !== 'practice') ctlTab = 'screw';
   levelDone = false;
   applyLayout();
@@ -1551,24 +1568,51 @@ addEventListener('keydown', e => {
 let look = { yaw: 0, pitch: -0.3 }, drag = null;
 const ray = new THREE.Raycaster(); ray.layers.set(UI);
 const clickables = () => [...(homeBtn.mesh.visible ? [homeBtn.mesh] : []), ...wins.flatMap(w => w.g.visible ? [w.bar.mesh, ...(w.collapsed ? [] : [w.body.mesh])] : []), ...screwMeshes];
-function pressHit(h) {
+// src = 'mouse' 或某支手把：按在標題列空白處 → 開始拖曳面板
+function pressHit(h, src) {
   if (!h) return false;
-  if (h.object.userData.panel) { const r = h.object.userData.panel.find(h.uv); if (r) startPress(r); return true; }
+  if (h.object.userData.panel) {
+    const r = h.object.userData.panel.find(h.uv); if (r) { startPress(r); return true; }
+    const win = h.object.userData.win; if (win && h.object === win.bar.mesh && src) startDrag(h, src);
+    return true;
+  }
   if (h.object.userData.screw !== undefined) { S.sel = h.object.userData.screw; refresh(); return true; }
   return false;
 }
+// 拖曳面板：抓住的那一點沿著射線保持同樣距離移動，面板自動轉向面對你、保持直立（不會歪）
+let pdrag = null; const mouseNdc = new THREE.Vector2(), _dv = new V3(), _dq = new THREE.Quaternion(), _de = new THREE.Euler();
+function startDrag(h, src) {
+  const win = h.object.userData.win; if (!win) return false;
+  win.g.updateMatrixWorld(true);
+  pdrag = { win, src, dist: h.distance, local: win.g.worldToLocal(h.point.clone()) };
+  return true;
+}
+function endDrag(src) { if (pdrag && (src === undefined || pdrag.src === src)) pdrag = null; }
+function dragTick() {
+  if (!pdrag) return;
+  if (pdrag.src === 'mouse') ray.setFromCamera(mouseNdc, camera); else ctrlRay(pdrag.src);
+  const g = pdrag.win.g, par = g.parent, o = ray.ray.origin;
+  const P = _dv.copy(ray.ray.direction).multiplyScalar(pdrag.dist).add(o);
+  const wy = Math.atan2(o.x - P.x, o.z - P.z);                        // 面向射線起點（你的手／眼睛）
+  _dq.setFromEuler(_de.set(g.rotation.x, wy, 0, 'YXZ'));
+  P.sub(pdrag.local.clone().applyQuaternion(_dq));
+  par.updateMatrixWorld(true);
+  g.position.copy(par.worldToLocal(P)); g.rotation.set(g.rotation.x, wy - par.rotation.y, 0, 'YXZ');
+}
 renderer.domElement.addEventListener('pointerdown', e => {
-  const ndc = new THREE.Vector2(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
-  ray.setFromCamera(ndc, camera);
-  if (pressHit(ray.intersectObjects(clickables(), false)[0])) return;
+  mouseNdc.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  ray.setFromCamera(mouseNdc, camera);
+  if (pressHit(ray.intersectObjects(clickables(), false)[0], 'mouse')) return;
   drag = { x: e.clientX, y: e.clientY };
 });
+addEventListener('keydown', e => { if (e.code === 'KeyF' && !e.repeat && MODE === 'practice') summonPanels(); });
 addEventListener('pointermove', e => {
+  mouseNdc.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
   if (!drag) return;
   look.yaw += (e.clientX - drag.x) * 0.004; look.pitch += (e.clientY - drag.y) * 0.004;
   look.pitch = THREE.MathUtils.clamp(look.pitch, -1.4, 1.4); drag.x = e.clientX; drag.y = e.clientY;
 });
-addEventListener('pointerup', () => { drag = null; endPress(); });
+addEventListener('pointerup', () => { drag = null; endPress(); endDrag('mouse'); });
 renderer.domElement.addEventListener('wheel', e => { camera.fov = THREE.MathUtils.clamp(camera.fov + e.deltaY * 0.03, 15, 80); camera.updateProjectionMatrix(); }, { passive: true });
 addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
 const hud = document.getElementById('hud'), hudToggle = document.getElementById('hudToggle');
@@ -1582,6 +1626,7 @@ const tmpM = new THREE.Matrix4();
 const rayGeo = new THREE.BufferGeometry().setFromPoints([new V3(), new V3(0, 0, -1)]);
 function ctrlRay(c) { tmpM.identity().extractRotation(c.matrixWorld); ray.ray.origin.setFromMatrixPosition(c.matrixWorld); ray.ray.direction.set(0, 0, -1).applyMatrix4(tmpM); }
 function heading(c) { tmpM.identity().extractRotation(c.matrixWorld); const f = new V3(0, 0, -1).applyMatrix4(tmpM); return Math.atan2(-f.x, -f.z); }
+function buzz(c) { const ha = c.userData.src && c.userData.src.gamepad && c.userData.src.gamepad.hapticActuators; if (ha && ha[0] && ha[0].pulse) ha[0].pulse(0.35, 30); }
 const ctrls = [0, 1].map(i => {
   const c = renderer.xr.getController(i); rig.add(c);
   // 射線和指標點一定畫在面板「上面」（面板本身不做深度測試、排序 50~60，所以射線要更後面畫、也不做深度測試），射線長度剪到碰到面板的位置
@@ -1594,11 +1639,16 @@ const ctrls = [0, 1].map(i => {
   c.addEventListener('disconnected', () => { c.userData.src = null; c.visible = false; dot.visible = false; });
   c.addEventListener('selectstart', () => {
     c.updateMatrixWorld(true); ctrlRay(c);
-    if (pressHit(ray.intersectObjects(clickables(), false)[0])) { const ha = c.userData.src && c.userData.src.gamepad && c.userData.src.gamepad.hapticActuators; if (ha && ha[0] && ha[0].pulse) ha[0].pulse(0.35, 30); }
+    if (pressHit(ray.intersectObjects(clickables(), false)[0], c)) buzz(c);
   });
-  c.addEventListener('selectend', endPress);
-  c.addEventListener('squeezestart', () => { c.userData.grab = heading(c); });
-  c.addEventListener('squeezeend', () => { c.userData.grab = null; });
+  c.addEventListener('selectend', () => { endPress(); endDrag(c); });
+  // 握把：射線指著面板 → 抓住面板拖曳；沒指著面板 → 握住轉動手把來轉鏡頭
+  c.addEventListener('squeezestart', () => {
+    c.updateMatrixWorld(true); ctrlRay(c); const h = ray.intersectObjects(clickables(), false)[0];
+    if (h && h.object.userData.win && startDrag(h, c)) { buzz(c); return; }
+    c.userData.grab = heading(c);
+  });
+  c.addEventListener('squeezeend', () => { c.userData.grab = null; endDrag(c); });
   return c;
 });
 const sticks = {};
@@ -1628,6 +1678,15 @@ function xrInput(dt) {
   for (const src of s.inputSources) {
     const gp = src.gamepad; if (!gp || gp.axes.length < 4) continue;
     const ax = gp.axes[2], ay = gp.axes[3];
+    // Y（左手）／B（右手）：把工作板叫到面前（按一次叫一次）
+    const yb = gp.buttons[5] && gp.buttons[5].pressed, kb = 'yb' + src.handedness;
+    if (yb && !sticks[kb] && MODE === 'practice') summonPanels();
+    sticks[kb] = yb;
+    // 拖曳面板時：右搖桿上下 = 把面板推遠／拉近（不會瞬移）
+    if (pdrag && pdrag.src !== 'mouse' && src.handedness === 'right') {
+      if (Math.abs(ay) > 0.2) pdrag.dist = THREE.MathUtils.clamp(pdrag.dist - ay * dt * 1.2, 0.3, 4);
+      continue;
+    }
     if (src.handedness === 'left') {
       if (MODE !== 'exam') {                       // 練習模式：左搖桿 = 走路（往你看的方向）
         const mx = Math.abs(ax) > 0.2 ? ax : 0, my = Math.abs(ay) > 0.2 ? ay : 0;
@@ -1658,9 +1717,6 @@ function xrInput(dt) {
       if (d > Math.PI) d -= 2 * Math.PI; if (d < -Math.PI) d += 2 * Math.PI;
       S.yaw += d; c.userData.grab = h;
     }
-    ctrlRay(c);
-    const hit = ray.intersectObjects(clickables(), false)[0];
-    c.children[0].scale.z = hit ? hit.distance : 3;
   }
 }
 function deskInput(dt) {
@@ -1687,9 +1743,9 @@ function headYaw() { rig.updateMatrixWorld(true); camera.getWorldDirection(hd); 
 function moveHeadTo(x, z) { headWorld(hv); rig.position.x += x - hv.x; rig.position.z += z - hv.z; rig.position.y = groundAt(x); }
 function snapTurn(dir) {                       // 繞著頭轉，人不會被甩出去
   headWorld(hv); rig.rotation.y += dir * 30 * DEG; headWorld(hv2);
-  rig.position.x += hv.x - hv2.x; rig.position.z += hv.z - hv2.z; follow.force = true;
+  rig.position.x += hv.x - hv2.x; rig.position.z += hv.z - hv2.z;      // 面板留在原地（要叫回來按 Y／B）
 }
-function teleportTo(x, z) { moveHeadTo(x, z); follow.force = true; }
+function teleportTo(x, z) { moveHeadTo(x, z); }
 function homePos() { const s = D.st[S.si]; return { x: s.x, z: s.z + 0.6 }; }
 // 走到側面看某個位置（練習模式內業用：從側面看，樁、視線、標籤才不會疊在一起）
 function goView(x, z) {
@@ -1805,17 +1861,18 @@ xrBtn.onclick = async () => {
 // ═════════════ 啟動 ═════════════
 setLayer(stationUI, UI);
 // 面板永遠畫在標籤和虛線上面（不被擋住）
-for (const m of [fb.mesh, ctl.mesh, rec.mesh, dia.mesh, fbWin.bar.mesh, ctlWin.bar.mesh, recWin.bar.mesh, diaWin.bar.mesh, bub.mesh, telPanel, homeBtn.mesh]) {
+for (const m of [fb.mesh, ctl.mesh, rec.mesh, dia.mesh, fbWin.bar.mesh, ctlWin.bar.mesh, recWin.bar.mesh, bub.mesh, telPanel, homeBtn.mesh]) {
   m.renderOrder = m === homeBtn.mesh ? 60 : 50; m.material.transparent = true; m.material.depthTest = false;
   m.children.forEach((c, i) => { c.renderOrder = 51 + i; if (c.material) c.material.depthTest = false; });
 }
+setLayer(instUI, UI); barsReady = true;
 startMode('menu');
 window.dbg = { S, D: () => D, G, vals: () => vals, solve, fillStep, skipStep, prevStep, scoreAll, toCalc, commitCell, setCell: k => { cell = k; }, inp: v => { inp = v; }, trueRead, press, placeStation, look, camera, telCam, renderer, rt, startMode, rig, returnHome, teleportTo, keys, labels, homeBtn, wins, ctlTab: () => ctlTab, steps: () => steps, gi: () => gi, goStep, submitPractice, st: () => ({ aimPt, blurBias, MODE }) };
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(dbg.tick = (fixed) => {
   const dt = typeof fixed === 'number' && fixed < 1 ? fixed : Math.min(clock.getDelta(), 0.05);
   deskInput(dt); xrInput(dt); holdTick(dt);
-  updateInstrument(); guideTick(dt); updateLabels(); homeTick(dt); followTick(dt);
+  updateInstrument(); guideTick(dt); updateLabels(); homeTick(dt); followTick(dt); instTick(dt); dragTick();
   if (MODE === 'exam' && !levelDone) { levelT = G.length() <= LEVEL_OK ? levelT + dt : 0; if (levelT > 1.5) { levelDone = true; if (ctlTab === 'screw') setCtlTab('main'); } }
   if (MODE === 'practice' && (gRedraw -= dt) < 0) { gRedraw = 0.25; const k = steps[gi] && steps[gi].kind; if (k === 'level' || k === 'aim' || k === 'focus') drawFB(); }
   if (MODE !== 'menu' && ctlTab === 'main' && ctlWin.g.visible && !ctlWin.collapsed && (ctlRedraw -= dt) < 0) { ctlRedraw = 0.2; drawCtl(); }
