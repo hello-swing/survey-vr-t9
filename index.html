@@ -577,7 +577,7 @@ function drawCtl() {
   } else {
     p.text('Quest 手把', 24, 34, 28, '#2b2a27', 'left', '500');
     p.text('板機：點按鈕（按住 = 連續）　握把＋轉動手把：大幅轉鏡頭', 24, 80, 25, '#4a4740');
-    p.text('左搖桿：左右 = 鏡頭微調一格，上下 = 對焦', 24, 120, 25, '#4a4740');
+    p.text(MODE === 'exam' ? '左搖桿：左右 = 鏡頭微調一格，上下 = 對焦' : '左搖桿：走路（往你看的方向）；鏡頭微調、對焦請用面板按鈕', 24, 120, 25, '#4a4740');
     p.text(MODE === 'exam' ? '右搖桿：左右 = 轉身 30°（實戰模式不能走動）' : '右搖桿：往前推瞄準地面、放開就瞬移；左右 = 轉身 30°', 24, 160, 25, '#4a4740');
     p.text('電腦', 24, 222, 28, '#2b2a27', 'left', '500');
     p.text(MODE === 'exam' ? '拖曳滑鼠：看四周　滑鼠點面板按鈕：操作儀器' : 'W A S D（或方向鍵）：走路，加 Shift 跑步　拖曳滑鼠：看四周', 24, 268, 25, '#4a4740');
@@ -1596,8 +1596,17 @@ function xrInput(dt) {
     const gp = src.gamepad; if (!gp || gp.axes.length < 4) continue;
     const ax = gp.axes[2], ay = gp.axes[3];
     if (src.handedness === 'left') {
-      stickStep('lx', ax, () => turnYaw(-STEP.yawFine), () => turnYaw(STEP.yawFine), dt);
-      stickStep('ly', ay, () => focusStep(-1), () => focusStep(1), dt);
+      if (MODE !== 'exam') {                       // 練習模式：左搖桿 = 走路（往你看的方向）
+        const mx = Math.abs(ax) > 0.2 ? ax : 0, my = Math.abs(ay) > 0.2 ? ay : 0;
+        if (mx || my) {
+          const yaw = headYaw(), sp = 1.6 * dt;
+          const nx = rig.position.x + (-Math.sin(yaw) * -my + Math.cos(yaw) * mx) * sp, nz = rig.position.z + (-Math.cos(yaw) * -my - Math.sin(yaw) * mx) * sp;
+          if (inBounds(nx, nz)) { rig.position.x = nx; rig.position.z = nz; headWorld(hv); rig.position.y = groundAt(hv.x); }
+        }
+      } else {                                     // 實戰模式不能走動：左搖桿 = 鏡頭微調、對焦
+        stickStep('lx', ax, () => turnYaw(-STEP.yawFine), () => turnYaw(STEP.yawFine), dt);
+        stickStep('ly', ay, () => focusStep(-1), () => focusStep(1), dt);
+      }
     } else if (src.handedness === 'right') {
       const c = ctrls.find(k => k.userData.src === src);
       if (ay < -0.6 && c && MODE !== 'exam') tele.ctrl = c;                         // 往前推：開始瞄準瞬移
@@ -1779,6 +1788,8 @@ renderer.setAnimationLoop(dbg.tick = (fixed) => {
   if (MODE === 'exam' && view === 'book' && (examRedraw -= dt) < 0) { examRedraw = 1; drawFB(); }
   if (endConfirm > 0 && (endConfirm -= dt) <= 0) { endConfirm = 0; drawFB(); }
   drawBubble(); renderTelescope();
+  // three.js r160 的 VR 相機只看得到圖層 0~2；儀器、面板、手把都在圖層 5（UI），要手動打開，不然 VR 裡全部看不見
+  if (renderer.xr.isPresenting) { const xc = renderer.xr.getCamera(); xc.layers.enable(UI); for (const c of xc.cameras) c.layers.enable(UI); }
   renderer.render(scene, camera);
 });
 </script>
