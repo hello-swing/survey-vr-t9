@@ -512,7 +512,9 @@ function followTick(dt) {
 // 操作面板：三個分頁
 const ctl = new Panel(0.66, 0.492, 1100, 820);
 let ctlTab = 'main', levelDone = false, levelT = 0, lastCat = '';
-const CTL_TABS = [['main', '轉鏡頭・對焦'], ['screw', '腳螺旋'], ['help', '按鍵說明']];
+const CTL_TABS = [['main', '轉鏡頭・對焦'], ['screw', '腳螺旋'], ['help', '說明・選單']];
+let menuAsk = '', menuAskT = 0;
+const BTN_POS = { menu: [24, 500, 520, 86], other: [556, 500, 520, 86], reset: [24, 600, 520, 86], exit: [556, 600, 520, 86] };
 function setCtlTab(t) { ctlTab = t; if (ctlWin.collapsed) ctlWin.setCollapsed(false); ctlWin.drawBar(); drawCtl(); }
 const ctlWin = new Win(ctl, 0.66, 0.492, (p) => {
   CTL_TABS.forEach(([k, name], i) => {
@@ -576,16 +578,29 @@ function drawCtl() {
     p.btn(24, 352, 520, 90, '調好了，回到「轉鏡頭・對焦」', () => setCtlTab('main'), { size: 28, fill: ok ? '#1f5fa8' : '#ffffff', color: ok ? '#fff' : '#2b2a27', stroke: ok ? '#1f5fa8' : '#9a968c' });
   } else {
     p.text('Quest 手把', 24, 34, 28, '#2b2a27', 'left', '500');
-    p.text('板機：點按鈕（按住 = 連續）　握把＋轉動手把：大幅轉鏡頭', 24, 80, 25, '#4a4740');
+    p.text('射線指到按鈕會出現黃色圓圈，按板機 = 點（按住 = 連續）　握把＋轉動手把：大幅轉鏡頭', 24, 80, 23, '#4a4740');
     p.text(MODE === 'exam' ? '左搖桿：左右 = 鏡頭微調一格，上下 = 對焦' : '左搖桿：走路（往你看的方向）；鏡頭微調、對焦請用面板按鈕', 24, 120, 25, '#4a4740');
     p.text(MODE === 'exam' ? '右搖桿：左右 = 轉身 30°（實戰模式不能走動）' : '右搖桿：往前推瞄準地面、放開就瞬移；左右 = 轉身 30°', 24, 160, 25, '#4a4740');
     p.text('電腦', 24, 222, 28, '#2b2a27', 'left', '500');
     p.text(MODE === 'exam' ? '拖曳滑鼠：看四周　滑鼠點面板按鈕：操作儀器' : 'W A S D（或方向鍵）：走路，加 Shift 跑步　拖曳滑鼠：看四周', 24, 268, 25, '#4a4740');
     p.text('數字鍵／+−×÷：輸入讀數或算式　Enter：確認', 24, 308, 25, '#4a4740');
     if (MODE !== 'exam') {
-      p.text('面板上方的「懸浮中／固定在測站」可以切換面板要跟著你走，', 24, 370, 24, '#6b6860');
-      p.text('還是留在儀器旁邊；「收合」可以先把面板縮起來。', 24, 408, 24, '#6b6860');
+      p.text('面板上方的「懸浮中／固定在測站」可以切換面板要跟著你走，還是留在儀器旁邊；', 24, 360, 22, '#6b6860');
+      p.text('「收合」可以先把面板縮起來。', 24, 392, 22, '#6b6860');
     }
+    // 選單（VR 裡看不到網頁左上角的說明區，所以換模式、回主選單、離開 VR 都放在這裡）
+    p.rect(14, 430, 1072, 2, '#d8d4ca');
+    p.text('選單', 24, 470, 28, '#2b2a27', 'left', '500');
+    if (menuAsk) p.text('再按一次同一顆按鈕確認（3 秒內）', 1076, 470, 24, '#c0281e', 'right', '500');
+    const ask = (k, label, fn) => p.btn(...BTN_POS[k], menuAsk === k ? '再按一次確認' : label, () => {
+      if (MODE === 'menu' || menuAsk === k) { menuAsk = ''; fn(); return; }
+      menuAsk = k; drawCtl(); clearTimeout(menuAskT); menuAskT = setTimeout(() => { menuAsk = ''; if (ctlTab === 'help') drawCtl(); }, 3000);
+    }, { size: 28, fill: menuAsk === k ? '#fff0ee' : '#ffffff', stroke: menuAsk === k ? '#c0281e' : '#9a968c' });
+    ask('menu', '回主選單', () => startMode('menu'));
+    ask('other', MODE === 'exam' ? '改成練習模式' : '改成實戰模式', () => startMode(MODE === 'exam' ? 'practice' : 'exam'));
+    p.btn(...BTN_POS.reset, '面板歸位', resetPanels, { size: 28 });
+    if (renderer.xr.isPresenting) p.btn(...BTN_POS.exit, '離開 VR', () => { const s = renderer.xr.getSession(); if (s) s.end(); }, { size: 28, fill: '#2f3e4e', color: '#fff', stroke: '#2f3e4e' });
+    p.text('換模式或回主選單會清掉目前的進度，所以要按兩次。', 24, 712, 22, '#6b6860');
   }
   p.update();
 }
@@ -1569,12 +1584,18 @@ function ctrlRay(c) { tmpM.identity().extractRotation(c.matrixWorld); ray.ray.or
 function heading(c) { tmpM.identity().extractRotation(c.matrixWorld); const f = new V3(0, 0, -1).applyMatrix4(tmpM); return Math.atan2(-f.x, -f.z); }
 const ctrls = [0, 1].map(i => {
   const c = renderer.xr.getController(i); rig.add(c);
-  const line = new THREE.Line(rayGeo, new THREE.LineBasicMaterial({ color: 0xd9480f })); line.scale.z = 3; c.add(line);
+  // 射線和指標點一定畫在面板「上面」（面板本身不做深度測試、排序 50~60，所以射線要更後面畫、也不做深度測試），射線長度剪到碰到面板的位置
+  const line = new THREE.Line(rayGeo, new THREE.LineBasicMaterial({ color: 0xd9480f, depthTest: false, transparent: true })); line.scale.z = 3; line.renderOrder = 80; c.add(line);
+  const dot = new THREE.Mesh(new THREE.RingGeometry(0.006, 0.012, 20), new THREE.MeshBasicMaterial({ color: 0xffd43b, depthTest: false, transparent: true, side: THREE.DoubleSide }));
+  dot.renderOrder = 81; dot.visible = false; scene.add(dot); c.userData.line = line; c.userData.dot = dot;
   c.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.09), new THREE.MeshLambertMaterial({ color: 0x333333 })), 0, 0, 0.03));
-  setLayer(c, UI); c.visible = false;
+  setLayer(c, UI); dot.layers.set(UI); c.visible = false;
   c.addEventListener('connected', e => { c.userData.src = e.data; c.visible = true; });
-  c.addEventListener('disconnected', () => { c.userData.src = null; c.visible = false; });
-  c.addEventListener('selectstart', () => { ctrlRay(c); pressHit(ray.intersectObjects(clickables(), false)[0]); });
+  c.addEventListener('disconnected', () => { c.userData.src = null; c.visible = false; dot.visible = false; });
+  c.addEventListener('selectstart', () => {
+    c.updateMatrixWorld(true); ctrlRay(c);
+    if (pressHit(ray.intersectObjects(clickables(), false)[0])) { const ha = c.userData.src && c.userData.src.gamepad && c.userData.src.gamepad.hapticActuators; if (ha && ha[0] && ha[0].pulse) ha[0].pulse(0.35, 30); }
+  });
   c.addEventListener('selectend', endPress);
   c.addEventListener('squeezestart', () => { c.userData.grab = heading(c); });
   c.addEventListener('squeezeend', () => { c.userData.grab = null; });
@@ -1589,6 +1610,18 @@ function stickStep(key, v, pos, neg, dt) {
   if (s.on !== dir) { s.on = dir; s.t = 0; s.acc = 0; (dir > 0 ? pos : neg)(); return; }
   s.t += dt;
   if (s.t > 0.4) { s.acc += dt; while (s.acc > 0.05) { s.acc -= 0.05; (dir > 0 ? pos : neg)(); } }
+}
+// 每一幀：射線剪到碰到面板的地方，碰到的位置放一個黃色圓圈，讓你知道板機會按到哪裡
+const _q = new THREE.Quaternion();
+function ctrlPointTick() {
+  for (const c of ctrls) {
+    const { line, dot } = c.userData;
+    if (!c.visible || !renderer.xr.isPresenting) { dot.visible = false; continue; }
+    ctrlRay(c); const h = ray.intersectObjects(clickables(), false)[0];
+    line.scale.z = h ? Math.max(0.02, h.distance) : 3;
+    dot.visible = !!h;
+    if (h) { dot.position.copy(h.point); h.object.getWorldQuaternion(_q); dot.quaternion.copy(_q); dot.translateZ(0.002); }
+  }
 }
 function xrInput(dt) {
   const s = renderer.xr.getSession(); if (!s) return;
@@ -1765,7 +1798,8 @@ xrBtn.onclick = async () => {
   if (renderer.xr.isPresenting) { renderer.xr.getSession().end(); return; }
   const s = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor'] });
   await renderer.xr.setSession(s); xrBtn.textContent = '離開 VR';
-  s.addEventListener('end', () => { xrBtn.textContent = '進入 VR'; });
+  follow.force = follow.snap = true; if (ctlTab === 'help') drawCtl();      // 進 VR 時面板重新排到你面前；「離開 VR」按鈕出現
+  s.addEventListener('end', () => { xrBtn.textContent = '進入 VR'; if (ctlTab === 'help') drawCtl(); });
 };
 
 // ═════════════ 啟動 ═════════════
@@ -1787,7 +1821,7 @@ renderer.setAnimationLoop(dbg.tick = (fixed) => {
   if (MODE !== 'menu' && ctlTab === 'main' && ctlWin.g.visible && !ctlWin.collapsed && (ctlRedraw -= dt) < 0) { ctlRedraw = 0.2; drawCtl(); }
   if (MODE === 'exam' && view === 'book' && (examRedraw -= dt) < 0) { examRedraw = 1; drawFB(); }
   if (endConfirm > 0 && (endConfirm -= dt) <= 0) { endConfirm = 0; drawFB(); }
-  drawBubble(); renderTelescope();
+  drawBubble(); renderTelescope(); ctrlPointTick();
   // three.js r160 的 VR 相機只看得到圖層 0~2；儀器、面板、手把都在圖層 5（UI），要手動打開，不然 VR 裡全部看不見
   if (renderer.xr.isPresenting) { const xc = renderer.xr.getCamera(); xc.layers.enable(UI); for (const c of xc.cameras) c.layers.enable(UI); }
   renderer.render(scene, camera);
